@@ -1,0 +1,21 @@
+.DS_Store
+.idea/
+
+# Контекст и настройки ИИ-агентов, решения пока не публикуем
+/.agents/
+/.claude/
+/docs/decisions/
+AGENTS.md
+CLAUDE.md
+
+# Черновики и временные материалы
+/temp/
+
+# JS
+node_modules/
+
+# Rust
+/core/target/
+
+# Результаты утилиты рендера
+*.wav

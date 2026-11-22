@@ -1,0 +1,308 @@
+//! C-интерфейс ядра для C++ Turbo Module и платформенного кода. Заголовок — `include/sound_engine.h`.
+//!
+//! Функции управления вызываются из одного потока или под внешней синхронизацией,
+//! `sound_engine_render` — только из аудиопотока, `sound_engine_get_state` — из любого потока.
+
+use std::cell::UnsafeCell;
+use std::ffi::{CStr, CString, c_char};
+use std::slice;
+
+use sound_core::{Controller, EngineError, Processor, StateReader, create};
+
+pub const SOUND_ENGINE_OK: i32 = 0;
+pub const SOUND_ENGINE_ERROR_INVALID_ARGUMENT: i32 = 1;
+pub const SOUND_ENGINE_ERROR_SCENE: i32 = 2;
+pub const SOUND_ENGINE_ERROR_UNKNOWN_KNOB: i32 = 3;
+pub const SOUND_ENGINE_ERROR_QUEUE_FULL: i32 = 4;
+pub const SOUND_ENGINE_ERROR_PROCESSOR_GONE: i32 = 5;
+
+const MIN_SAMPLE_RATE: f32 = 8_000.0;
+const MAX_SAMPLE_RATE: f32 = 384_000.0;
+
+/// Движок целиком. Управляющая сторона и сторона аудиопотока лежат в отдельных ячейках,
+/// потому что ими пользуются разные потоки одновременно.
+pub struct SoundEngine {
+    controller: UnsafeCell<Controller>,
+    processor: UnsafeCell<Processor>,
+    state: StateReader,
+    last_error: UnsafeCell<CString>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SoundEngineState {
+    /// 0 — сцена не загружена, 1 — пауза, 2 — играет, 3 — затухает перед паузой.
+    pub status: i32,
+    /// Секунды до срабатывания таймера или -1, если таймер выключен.
+    pub timer_remaining_seconds: f32,
+    /// Сглаженная громкость выхода (RMS) для анимации.
+    pub level: f32,
+}
+
+enum ControlError {
+    InvalidArgument(&'static str),
+    Engine(EngineError),
+}
+
+/// Создаёт движок. Возвращает пустой указатель, если частота дискретизации вне 8–384 кГц.
+#[unsafe(no_mangle)]
+pub extern "C" fn sound_engine_create(sample_rate: f32) -> *mut SoundEngine {
+    if !(MIN_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&sample_rate) {
+        return std::ptr::null_mut();
+    }
+    let (controller, processor) = create(sample_rate);
+    let state = controller.state_reader();
+    Box::into_raw(Box::new(SoundEngine {
+        controller: UnsafeCell::new(controller),
+        processor: UnsafeCell::new(processor),
+        state,
+        last_error: UnsafeCell::new(CString::default()),
+    }))
+}
+
+/// Уничтожает движок.
+///
+/// # Safety
+///
+/// `engine` получен из `sound_engine_create` и больше не используется ни в одном потоке,
+/// в том числе аудиопоток остановлен.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_destroy(engine: *mut SoundEngine) {
+    if !engine.is_null() {
+        drop(unsafe { Box::from_raw(engine) });
+    }
+}
+
+/// Загружает сцену из JSON. Если звук играет, новая сцена плавно сменяет старую.
+///
+/// # Safety
+///
+/// `engine` — живой движок, `scene_json` — строка в UTF-8 с нулём на конце.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_load_scene(engine: *mut SoundEngine, scene_json: *const c_char) -> i32 {
+    unsafe {
+        with_controller(engine, |controller| {
+            let json = read_str(scene_json)?;
+            controller.load_scene_json(json).map_err(ControlError::Engine)
+        })
+    }
+}
+
+/// # Safety
+///
+/// `engine` — живой движок.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_play(engine: *mut SoundEngine) -> i32 {
+    unsafe { with_controller(engine, |controller| controller.play().map_err(ControlError::Engine)) }
+}
+
+/// # Safety
+///
+/// `engine` — живой движок.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_pause(engine: *mut SoundEngine) -> i32 {
+    unsafe { with_controller(engine, |controller| controller.pause().map_err(ControlError::Engine)) }
+}
+
+/// Ставит ручку текущей сцены в положение от 0 до 1.
+///
+/// # Safety
+///
+/// `engine` — живой движок, `knob_id` — строка в UTF-8 с нулём на конце.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_set_knob(engine: *mut SoundEngine, knob_id: *const c_char, position: f32) -> i32 {
+    unsafe {
+        with_controller(engine, |controller| {
+            let knob_id = read_str(knob_id)?;
+            controller.set_knob(knob_id, position).map_err(ControlError::Engine)
+        })
+    }
+}
+
+/// Включает таймер на `seconds` секунд игры. Ноль или отрицательное значение выключает таймер.
+///
+/// # Safety
+///
+/// `engine` — живой движок.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_set_timer(engine: *mut SoundEngine, seconds: f32) -> i32 {
+    let seconds = (seconds.is_finite() && seconds > 0.0).then_some(seconds);
+    unsafe { with_controller(engine, |controller| controller.set_timer(seconds).map_err(ControlError::Engine)) }
+}
+
+/// Задаёт общую громкость от 0 до 1.
+///
+/// # Safety
+///
+/// `engine` — живой движок.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_set_volume(engine: *mut SoundEngine, volume: f32) -> i32 {
+    unsafe {
+        with_controller(engine, |controller| {
+            controller.set_volume(volume);
+            Ok(())
+        })
+    }
+}
+
+/// Возвращает текст ошибки последней функции управления. Пустая строка, если ошибки не было.
+/// Указатель живёт до следующего вызова функции управления.
+///
+/// # Safety
+///
+/// `engine` — живой движок или пустой указатель.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_last_error(engine: *const SoundEngine) -> *const c_char {
+    match unsafe { engine.as_ref() } {
+        Some(engine) => unsafe { (*engine.last_error.get()).as_ptr() },
+        None => c"движок не создан".as_ptr(),
+    }
+}
+
+/// Заполняет `frames` отсчётов в каждом из двух буферов. Вызывается только из аудиопотока.
+///
+/// # Safety
+///
+/// `engine` — живой движок; `left` и `right` указывают на непересекающиеся буферы
+/// длиной не меньше `frames`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_render(engine: *mut SoundEngine, left: *mut f32, right: *mut f32, frames: u32) {
+    let Some(engine) = (unsafe { engine.as_ref() }) else {
+        return;
+    };
+    if left.is_null() || right.is_null() || frames == 0 {
+        return;
+    }
+    let processor = unsafe { &mut *engine.processor.get() };
+    let (left, right) = unsafe {
+        (slice::from_raw_parts_mut(left, frames as usize), slice::from_raw_parts_mut(right, frames as usize))
+    };
+    processor.render(left, right);
+}
+
+/// Возвращает состояние плеера. Можно вызывать из любого потока.
+///
+/// # Safety
+///
+/// `engine` — живой движок или пустой указатель.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_get_state(engine: *const SoundEngine) -> SoundEngineState {
+    let Some(engine) = (unsafe { engine.as_ref() }) else {
+        return SoundEngineState { status: 0, timer_remaining_seconds: -1.0, level: 0.0 };
+    };
+    let state = engine.state.state();
+    SoundEngineState {
+        status: i32::from(state.status as u8),
+        timer_remaining_seconds: state.timer_remaining_seconds.unwrap_or(-1.0),
+        level: state.level,
+    }
+}
+
+/// Выполняет действие управляющей стороны и запоминает текст ошибки для `sound_engine_last_error`.
+unsafe fn with_controller(
+    engine: *mut SoundEngine,
+    action: impl FnOnce(&mut Controller) -> Result<(), ControlError>,
+) -> i32 {
+    let Some(engine) = (unsafe { engine.as_ref() }) else {
+        return SOUND_ENGINE_ERROR_INVALID_ARGUMENT;
+    };
+    let controller = unsafe { &mut *engine.controller.get() };
+    let (code, message) = match action(controller) {
+        Ok(()) => (SOUND_ENGINE_OK, String::new()),
+        Err(ControlError::InvalidArgument(message)) => (SOUND_ENGINE_ERROR_INVALID_ARGUMENT, message.to_owned()),
+        Err(ControlError::Engine(error)) => (error_code(&error), error.to_string()),
+    };
+    let message = CString::new(message.replace('\0', " ")).unwrap_or_default();
+    unsafe { *engine.last_error.get() = message };
+    code
+}
+
+fn error_code(error: &EngineError) -> i32 {
+    match error {
+        EngineError::Scene(_) => SOUND_ENGINE_ERROR_SCENE,
+        EngineError::UnknownKnob(_) => SOUND_ENGINE_ERROR_UNKNOWN_KNOB,
+        EngineError::QueueFull => SOUND_ENGINE_ERROR_QUEUE_FULL,
+        EngineError::ProcessorGone => SOUND_ENGINE_ERROR_PROCESSOR_GONE,
+    }
+}
+
+/// Читает строку из C. Время жизни результата задаёт вызывающий: строка не должна освобождаться,
+/// пока результат используется.
+unsafe fn read_str<'a>(pointer: *const c_char) -> Result<&'a str, ControlError> {
+    if pointer.is_null() {
+        return Err(ControlError::InvalidArgument("передан пустой указатель на строку"));
+    }
+    unsafe { CStr::from_ptr(pointer) }.to_str().map_err(|_| ControlError::InvalidArgument("строка не в UTF-8"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::CString;
+
+    use super::*;
+
+    const SCENE_JSON: &str = r#"{
+        "id": "ffi",
+        "name": "Проверка C-интерфейса",
+        "harmony": { "root": 60, "scale": [0, 2, 4, 7, 9], "chords": [[0, 7, 12]], "chordSeconds": [10, 12] },
+        "layers": [{ "type": "pad", "id": "pad" }],
+        "knobs": [{ "id": "brightness", "name": "Яркость", "targets": [{ "param": "pad.cutoff", "from": 500, "to": 3000 }] }]
+    }"#;
+
+    fn last_error(engine: *const SoundEngine) -> String {
+        unsafe { CStr::from_ptr(sound_engine_last_error(engine)) }.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn creates_plays_and_reports_state() {
+        let engine = sound_engine_create(48_000.0);
+        assert!(!engine.is_null());
+        let scene = CString::new(SCENE_JSON).unwrap();
+        let knob = CString::new("brightness").unwrap();
+        let mut left = vec![0.0f32; 4800];
+        let mut right = vec![0.0f32; 4800];
+        unsafe {
+            assert_eq!(sound_engine_load_scene(engine, scene.as_ptr()), SOUND_ENGINE_OK);
+            assert_eq!(sound_engine_set_knob(engine, knob.as_ptr(), 0.8), SOUND_ENGINE_OK);
+            assert_eq!(sound_engine_set_timer(engine, 600.0), SOUND_ENGINE_OK);
+            assert_eq!(sound_engine_play(engine), SOUND_ENGINE_OK);
+            for _ in 0..20 {
+                sound_engine_render(engine, left.as_mut_ptr(), right.as_mut_ptr(), 4800);
+            }
+            let state = sound_engine_get_state(engine);
+            assert_eq!(state.status, 2);
+            assert!(state.level > 0.0);
+            assert!(state.timer_remaining_seconds > 590.0 && state.timer_remaining_seconds < 600.0);
+            sound_engine_destroy(engine);
+        }
+        assert!(left.iter().any(|sample| *sample != 0.0));
+    }
+
+    #[test]
+    fn reports_errors_with_text() {
+        let engine = sound_engine_create(48_000.0);
+        let broken_scene = CString::new("{ \"id\": 1 }").unwrap();
+        let unknown_knob = CString::new("loudness").unwrap();
+        unsafe {
+            assert_eq!(sound_engine_load_scene(engine, broken_scene.as_ptr()), SOUND_ENGINE_ERROR_SCENE);
+            assert!(last_error(engine).starts_with("сцена не читается"));
+            assert_eq!(sound_engine_set_knob(engine, unknown_knob.as_ptr(), 0.5), SOUND_ENGINE_ERROR_UNKNOWN_KNOB);
+            assert_eq!(sound_engine_load_scene(engine, std::ptr::null()), SOUND_ENGINE_ERROR_INVALID_ARGUMENT);
+            assert_eq!(sound_engine_play(engine), SOUND_ENGINE_OK);
+            assert!(last_error(engine).is_empty());
+            sound_engine_destroy(engine);
+        }
+    }
+
+    #[test]
+    fn rejects_bad_sample_rate_and_null_engine() {
+        assert!(sound_engine_create(0.0).is_null());
+        assert!(sound_engine_create(f32::NAN).is_null());
+        unsafe {
+            assert_eq!(sound_engine_play(std::ptr::null_mut()), SOUND_ENGINE_ERROR_INVALID_ARGUMENT);
+            assert_eq!(sound_engine_get_state(std::ptr::null()).status, 0);
+            sound_engine_render(std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::null_mut(), 128);
+            sound_engine_destroy(std::ptr::null_mut());
+        }
+    }
+}

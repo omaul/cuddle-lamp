@@ -1,0 +1,15 @@
+[package]
+name = "sound-ffi"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[lib]
+name = "sound_engine"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+sound-core.workspace = true
+
+[lints]
+workspace = true

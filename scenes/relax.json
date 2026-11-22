@@ -1,0 +1,64 @@
+{
+    "id": "relax",
+    "name": "Отдых",
+    "seed": 2,
+    "harmony": {
+        "root": 60,
+        "scale": [0, 2, 4, 7, 9],
+        "chords": [
+            [0, 7, 11, 16],
+            [-3, 4, 7, 12],
+            [-7, 4, 9, 12],
+            [2, 9, 12, 17]
+        ],
+        "chordSeconds": [16, 26]
+    },
+    "params": {
+        "gain": 0.9,
+        "reverbDamping": 0.45
+    },
+    "layers": [
+        {
+            "type": "pad",
+            "id": "pad",
+            "params": { "level": 0.12, "cutoffLfoDepth": 0.35, "attack": 5, "release": 7, "reverbSend": 0.6 }
+        },
+        {
+            "type": "noise",
+            "id": "noise",
+            "params": { "level": 0.07, "waveDepth": 0.05 }
+        },
+        {
+            "type": "bells",
+            "id": "bells",
+            "octaves": [12],
+            "params": { "level": 0.065, "attack": 0.06, "releaseMin": 4, "releaseMax": 7, "reverbSend": 0.9 }
+        }
+    ],
+    "knobs": [
+        {
+            "id": "brightness",
+            "name": "Яркость",
+            "targets": [
+                { "param": "pad.cutoff", "from": 500, "to": 2000, "curve": "exponential" },
+                { "param": "noise.cutoff", "from": 250, "to": 1000, "curve": "exponential" }
+            ]
+        },
+        {
+            "id": "density",
+            "name": "Плотность",
+            "targets": [
+                { "param": "bells.gapMin", "from": 5, "to": 1.25, "curve": "exponential" },
+                { "param": "bells.gapMax", "from": 12, "to": 3, "curve": "exponential" }
+            ]
+        },
+        {
+            "id": "space",
+            "name": "Пространство",
+            "targets": [
+                { "param": "scene.reverbLevel", "from": 0.3, "to": 0.9 },
+                { "param": "scene.reverbDecay", "from": 3, "to": 9, "curve": "exponential" }
+            ]
+        }
+    ]
+}

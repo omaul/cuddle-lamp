@@ -4,7 +4,7 @@
  * Функции управления (load_scene, play, pause, set_knob, set_timer, set_volume, last_error)
  * вызываются из одного потока или под внешней синхронизацией, но не из аудиопотока:
  * загрузка сцены выделяет память.
- * sound_engine_render вызывается только из аудиопотока, она не выделяет память и не берёт блокировок.
+ * sound_engine_render не выделяет память и не берёт блокировок. Вызовы рендера не пересекаются.
  * sound_engine_get_state можно вызывать из любого потока.
  *
  * Реализация — core/crates/sound-ffi/src/lib.rs. Коды и поля здесь должны совпадать с ней.
@@ -78,7 +78,9 @@ int32_t sound_engine_set_volume(SoundEngine *engine, float volume);
  */
 const char *sound_engine_last_error(const SoundEngine *engine);
 
-/* Заполняет frames отсчётов в каждом из двух непересекающихся буферов. Только из аудиопотока. */
+/* Заполняет frames отсчётов в каждом из двух непересекающихся буферов.
+ * При frames == 0 обрабатывает команды без продвижения звука, буферы могут быть NULL.
+ */
 void sound_engine_render(SoundEngine *engine, float *left, float *right, uint32_t frames);
 
 /* Состояние плеера. Можно вызывать из любого потока. */

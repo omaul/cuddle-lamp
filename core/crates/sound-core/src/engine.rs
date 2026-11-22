@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, VecDeque};
 use std::f32::consts::FRAC_PI_2;
 use std::fmt;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 
 use serde::Serialize;
@@ -19,8 +19,8 @@ pub const SCENE_CROSSFADE_SECONDS: f32 = 4.0;
 
 const COMMAND_CAPACITY: usize = 256;
 const GARBAGE_CAPACITY: usize = 8;
-// Кроме очереди команд, аудиопоток может держать текущую и уходящую сцены.
-const SCENE_CAPACITY: usize = COMMAND_CAPACITY + 2;
+// Кроме очереди команд, аудиопоток может держать текущую, уходящую и ожидающую сцены.
+const SCENE_CAPACITY: usize = COMMAND_CAPACITY + 3;
 const VOLUME_SMOOTHING_SECONDS: f32 = 0.05;
 /// Общее усиление после компрессора (+11 дБ). При `gain` сцены 1.0 громкость выхода
 /// около −20 dBFS RMS, а пики остаются ниже −3 dBFS.
@@ -58,6 +58,8 @@ pub struct PlayerState {
     pub status: PlaybackStatus,
     /// Сколько секунд осталось до срабатывания таймера, если он включён.
     pub timer_remaining_seconds: Option<f32>,
+    /// Таймер завершил текущий сеанс воспроизведения. Сбрасывается при Play.
+    pub timer_expired: bool,
     /// Сглаженная громкость выхода (RMS), например для анимации.
     pub level: f32,
     /// Номер последней команды, которую обработал аудиопоток.
@@ -126,6 +128,7 @@ enum Command {
 struct SharedState {
     status: AtomicU8,
     timer_remaining_milliseconds: AtomicU32,
+    timer_expired: AtomicBool,
     level: AtomicU32,
     volume: AtomicU32,
     applied_command: AtomicU32,
@@ -142,13 +145,14 @@ impl StateReader {
     pub fn state(&self) -> PlayerState {
         loop {
             let version = self.shared.snapshot_version.load(Ordering::SeqCst);
-            if version % 2 != 0 {
+            if !version.is_multiple_of(2) {
                 continue;
             }
             let timer_milliseconds = self.shared.timer_remaining_milliseconds.load(Ordering::SeqCst);
             let state = PlayerState {
                 status: PlaybackStatus::from_u8(self.shared.status.load(Ordering::SeqCst)),
                 timer_remaining_seconds: (timer_milliseconds != NO_TIMER).then(|| timer_milliseconds as f32 / 1000.0),
+                timer_expired: self.shared.timer_expired.load(Ordering::SeqCst),
                 level: f32::from_bits(self.shared.level.load(Ordering::SeqCst)),
                 applied_command: self.shared.applied_command.load(Ordering::SeqCst),
             };
@@ -166,6 +170,7 @@ pub fn create(sample_rate: f32) -> (Controller, Processor) {
     let shared = Arc::new(SharedState {
         status: AtomicU8::new(PlaybackStatus::Idle as u8),
         timer_remaining_milliseconds: AtomicU32::new(NO_TIMER),
+        timer_expired: AtomicBool::new(false),
         level: AtomicU32::new(0f32.to_bits()),
         volume: AtomicU32::new(1f32.to_bits()),
         applied_command: AtomicU32::new(0),
@@ -195,11 +200,13 @@ pub fn create(sample_rate: f32) -> (Controller, Processor) {
         status: PlaybackStatus::Idle,
         current: None,
         outgoing: None,
+        pending_scene: None,
         crossfade_position: 1.0,
         crossfade_step: 1.0 / (SCENE_CROSSFADE_SECONDS * sample_rate),
         transport_gain: 0.0,
         transport_step: 0.0,
         timer_samples_left: None,
+        timer_expired: false,
         reverb: Reverb::new(sample_rate),
         reverb_decay: Smoothed::new(4.0, REVERB_SMOOTHING_SECONDS, sample_rate),
         reverb_damping: Smoothed::new(0.4, REVERB_SMOOTHING_SECONDS, sample_rate),
@@ -369,11 +376,13 @@ pub struct Processor {
     status: PlaybackStatus,
     current: Option<Box<SceneRuntime>>,
     outgoing: Option<Box<SceneRuntime>>,
+    pending_scene: Option<Box<SceneRuntime>>,
     crossfade_position: f32,
     crossfade_step: f32,
     transport_gain: f32,
     transport_step: f32,
     timer_samples_left: Option<u64>,
+    timer_expired: bool,
     reverb: Reverb,
     reverb_decay: Smoothed,
     reverb_damping: Smoothed,
@@ -394,6 +403,11 @@ impl Processor {
 
         let mut sum_of_squares = 0.0;
         for (left_sample, right_sample) in left.iter_mut().zip(right.iter_mut()) {
+            if (self.outgoing.is_none() || !self.is_audible())
+                && let Some(pending) = self.pending_scene.take()
+            {
+                self.load(pending);
+            }
             if !self.is_audible() {
                 *left_sample = 0.0;
                 *right_sample = 0.0;
@@ -422,8 +436,8 @@ impl Processor {
                 Command::Play => self.start_playing(),
                 Command::Pause => self.begin_stopping(PAUSE_FADE_SECONDS),
                 Command::SetKnob { index, position } => {
-                    if let Some(current) = self.current.as_mut() {
-                        current.set_knob(index, position);
+                    if let Some(target) = self.pending_scene.as_mut().or(self.current.as_mut()) {
+                        target.set_knob(index, position);
                     }
                 }
                 Command::SetTimer(seconds) => {
@@ -437,7 +451,13 @@ impl Processor {
 
     fn load(&mut self, runtime: Box<SceneRuntime>) {
         if self.is_audible() && self.current.is_some() {
-            if let Some(previous) = self.outgoing.take() {
+            if self.outgoing.is_some() {
+                if let Some(previous) = self.pending_scene.replace(runtime) {
+                    self.dispose(previous);
+                }
+                return;
+            }
+            if let Some(previous) = self.pending_scene.take() {
                 self.dispose(previous);
             }
             self.outgoing = self.current.replace(runtime);
@@ -445,6 +465,9 @@ impl Processor {
             return;
         }
 
+        if let Some(previous) = self.pending_scene.take() {
+            self.dispose(previous);
+        }
         // Звук стоит, поэтому хвост прошлой сцены не нужен, а реверберация сразу берёт новые настройки
         self.reverb.clear();
         let settings = runtime.reverb_settings();
@@ -468,6 +491,7 @@ impl Processor {
             return;
         }
         self.status = PlaybackStatus::Playing;
+        self.timer_expired = false;
         self.transport_step = 1.0 / (PLAY_FADE_SECONDS * self.sample_rate);
     }
 
@@ -539,6 +563,7 @@ impl Processor {
         match self.timer_samples_left {
             Some(0) => {
                 self.timer_samples_left = None;
+                self.timer_expired = true;
                 self.begin_stopping(TIMER_FADE_SECONDS);
             }
             Some(samples_left) => self.timer_samples_left = Some(samples_left - 1),
@@ -582,6 +607,7 @@ impl Processor {
         self.shared.snapshot_version.fetch_add(1, Ordering::SeqCst);
         self.shared.status.store(self.status as u8, Ordering::SeqCst);
         self.shared.timer_remaining_milliseconds.store(timer_milliseconds, Ordering::SeqCst);
+        self.shared.timer_expired.store(self.timer_expired, Ordering::SeqCst);
         self.shared.level.store(self.level.to_bits(), Ordering::SeqCst);
         self.shared.applied_command.store(self.applied_command, Ordering::SeqCst);
         self.shared.snapshot_version.fetch_add(1, Ordering::SeqCst);

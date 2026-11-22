@@ -4,7 +4,7 @@ use crate::layers::{Layer, LayerFrame, MAX_CHORD_NOTES};
 use crate::music::Conductor;
 use crate::params::{ParamSet, ParamSpec, find_param};
 use crate::rng::Rng;
-use crate::scene::{Curve, Harmony, Scene, SceneError};
+use crate::scene::{Curve, Harmony, LayerSpec, Scene, SceneError};
 
 /// Параметры сцены целиком. В ручках адресуются как «scene.параметр».
 pub const SCENE_PARAMS: &[ParamSpec] = &[
@@ -64,6 +64,7 @@ impl SceneRuntime {
     pub fn new(scene: &Scene, sample_rate: f32) -> Result<Self, SceneError> {
         validate_harmony(&scene.harmony)?;
         validate_layer_ids(scene)?;
+        validate_notes(scene)?;
 
         let mut rng = Rng::new(scene.seed);
         let mut params = ParamSet::new(SCENE_PARAMS, &scene.params, "сцена", sample_rate)?;
@@ -157,6 +158,33 @@ fn validate_harmony(harmony: &Harmony) -> Result<(), SceneError> {
         return Err(SceneError::invalid(
             "гармония: chordSeconds должен быть парой положительных чисел, первое не больше второго",
         ));
+    }
+    Ok(())
+}
+
+fn validate_notes(scene: &Scene) -> Result<(), SceneError> {
+    let harmony = &scene.harmony;
+    let root = i64::from(harmony.root);
+    let is_midi_note = |note| (0..=127).contains(&note);
+    if !is_midi_note(root) {
+        return Err(SceneError::invalid("гармония: root должен быть нотой MIDI от 0 до 127"));
+    }
+    for layer in &scene.layers {
+        let valid = match layer {
+            LayerSpec::Pad(_) => {
+                harmony.chords.iter().flatten().all(|interval| is_midi_note(root - 12 + i64::from(*interval)))
+            }
+            LayerSpec::Bells(bells) => harmony.scale.iter().all(|degree| {
+                bells.octaves.iter().all(|octave| is_midi_note(root + i64::from(*degree) + i64::from(*octave)))
+            }),
+            LayerSpec::Noise(_) => true,
+        };
+        if !valid {
+            return Err(SceneError::invalid(format!(
+                "слой «{}»: ноты выходят за диапазон MIDI от 0 до 127",
+                layer.id()
+            )));
+        }
     }
     Ok(())
 }

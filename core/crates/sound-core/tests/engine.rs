@@ -113,9 +113,15 @@ fn timer_fades_out_and_pauses() {
     render(&mut processor, seconds_to_frames(1.5), 512);
     assert_eq!(controller.state().status, PlaybackStatus::Stopping);
     assert_eq!(controller.state().timer_remaining_seconds, None);
+    assert!(controller.state().timer_expired);
 
     render(&mut processor, seconds_to_frames(TIMER_FADE_SECONDS), 512);
     assert_eq!(controller.state().status, PlaybackStatus::Paused);
+    assert!(controller.state().timer_expired);
+
+    controller.play().unwrap();
+    processor.render(&mut [], &mut []);
+    assert!(!controller.state().timer_expired);
 }
 
 #[test]
@@ -204,4 +210,25 @@ fn volume_scales_output() {
     let (quiet_left, _) = render(&mut quiet, seconds_to_frames(3.0), 512);
     let ratio = rms(&quiet_left[seconds_to_frames(1.0)..]) / rms(&loud_left[seconds_to_frames(1.0)..]);
     assert!((ratio - 0.5).abs() < 0.05, "отношение громкостей {ratio}");
+}
+
+#[test]
+fn queued_scene_preserves_the_current_crossfade() {
+    let (mut reference_controller, mut reference) = create_playing(TEST_SCENE);
+    let (mut controller, mut processor) = create_playing(TEST_SCENE);
+    for (controller, processor) in [(&mut reference_controller, &mut reference), (&mut controller, &mut processor)] {
+        render(processor, seconds_to_frames(3.0), 512);
+        controller.load_scene_json(OTHER_SCENE).unwrap();
+        render(processor, seconds_to_frames(0.25), 512);
+    }
+
+    controller.load_scene(&scene_with_seed(99)).unwrap();
+    assert_eq!(
+        render(&mut processor, seconds_to_frames(1.0), 512),
+        render(&mut reference, seconds_to_frames(1.0), 512),
+    );
+    assert_ne!(
+        render(&mut processor, seconds_to_frames(5.0), 512),
+        render(&mut reference, seconds_to_frames(5.0), 512),
+    );
 }

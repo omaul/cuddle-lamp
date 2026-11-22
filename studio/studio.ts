@@ -25,6 +25,7 @@ type ActiveScene = {
 type PendingReply = {
     resolve: () => void;
     reject: (error: unknown) => void;
+    timeout: ReturnType<typeof setTimeout>;
 };
 
 const layerSettings = {
@@ -370,12 +371,17 @@ async function openAudio() {
             const reply = pending.get(id);
             if (!reply) return;
             pending.delete(id);
+            clearTimeout(reply.timeout);
             if (error) reply.reject(error);
             else reply.resolve();
         };
-        node.onprocessorerror = () => {
-            failed = new Error('Аудиодвижок остановился. Запустите прослушивание снова.');
-            for (const { reject } of pending.values()) reject(failed);
+        const failAudio = (message: string) => {
+            if (failed) return;
+            failed = new Error(message);
+            for (const { reject, timeout } of pending.values()) {
+                clearTimeout(timeout);
+                reject(failed);
+            }
             pending.clear();
             if (audio?.context === context) {
                 audio = undefined;
@@ -384,9 +390,10 @@ async function openAudio() {
                 report(audioStatus, failed.message, true);
                 charts.reset();
                 updatePeak(0);
-                void context.close();
+                void context.close().catch(() => {});
             }
         };
+        node.onprocessorerror = () => failAudio('Аудиодвижок остановился. Запустите прослушивание снова.');
         const send = (...command: AudioCommand) => {
             return new Promise<void>((resolve, reject) => {
                 if (failed) {
@@ -394,9 +401,16 @@ async function openAudio() {
                     return;
                 }
                 const id = sequence++;
-                pending.set(id, { resolve, reject });
+                const timeout = setTimeout(() => {
+                    failAudio('Аудиодвижок не ответил. Запустите прослушивание снова.');
+                }, 3000);
+                pending.set(id, { resolve, reject, timeout });
                 const request: AudioRequest = { id, command };
-                node.port.postMessage(request);
+                try {
+                    node.port.postMessage(request);
+                } catch {
+                    failAudio('Не удалось отправить команду. Запустите прослушивание снова.');
+                }
             });
         };
 

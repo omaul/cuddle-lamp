@@ -1,28 +1,336 @@
 // !$*UTF8*$!
 {
-    archiveVersion = 1;
-    classes = {};
-    objectVersion = 56;
-    objects = {
-        000000000000000000000001 = { isa = PBXProject; mainGroup = 000000000000000000000003; productRefGroup = 000000000000000000000005; buildConfigurationList = 00000000000000000000000B; compatibilityVersion = "Xcode 14.0"; developmentRegion = ru; knownRegions = (ru, Base); targets = (000000000000000000000002); };
-        000000000000000000000002 = { isa = PBXNativeTarget; name = CuddleLamp; productName = CuddleLamp; productReference = 000000000000000000000008; productType = "com.apple.product-type.application"; buildConfigurationList = 00000000000000000000000C; buildPhases = (00000000000000000000000D, 00000000000000000000000E, 00000000000000000000000F, 000000000000000000000010); };
-        000000000000000000000003 = { isa = PBXGroup; children = (000000000000000000000004, 000000000000000000000005); sourceTree = "<group>"; };
-        000000000000000000000004 = { isa = PBXGroup; children = (000000000000000000000006, 000000000000000000000007); path = CuddleLamp; sourceTree = "<group>"; };
-        000000000000000000000005 = { isa = PBXGroup; children = (000000000000000000000008); name = Products; sourceTree = "<group>"; };
-        000000000000000000000006 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-        000000000000000000000007 = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-        000000000000000000000008 = { isa = PBXFileReference; explicitFileType = wrapper.application; path = CuddleLamp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-        000000000000000000000009 = { isa = PBXBuildFile; fileRef = 000000000000000000000006; };
-        00000000000000000000000B = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000015, 000000000000000000000016); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-        00000000000000000000000C = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000017, 000000000000000000000018); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-        00000000000000000000000D = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000009); runOnlyForDeploymentPostprocessing = 0; };
-        00000000000000000000000E = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-        00000000000000000000000F = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-        000000000000000000000010 = { isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); name = "Bundle React Native code and images"; runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "set -e\nRN_SCRIPTS=\"$PROJECT_DIR/../node_modules/react-native/scripts\"\n/bin/sh \"$RN_SCRIPTS/xcode/with-environment.sh\" \"$RN_SCRIPTS/react-native-xcode.sh\"\n"; };
-        000000000000000000000015 = { isa = XCBuildConfiguration; name = Debug; buildSettings = { CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.4; SDKROOT = iphoneos; ENABLE_USER_SCRIPT_SANDBOXING = NO; ONLY_ACTIVE_ARCH = YES; }; };
-        000000000000000000000016 = { isa = XCBuildConfiguration; name = Release; buildSettings = { CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.4; SDKROOT = iphoneos; ENABLE_USER_SCRIPT_SANDBOXING = NO; }; };
-        000000000000000000000017 = { isa = XCBuildConfiguration; name = Debug; buildSettings = { INFOPLIST_FILE = CuddleLamp/Info.plist; PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = com.cuddlelamp; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_VERSION = 5.0; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks"); SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
-        000000000000000000000018 = { isa = XCBuildConfiguration; name = Release; buildSettings = { INFOPLIST_FILE = CuddleLamp/Info.plist; PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = com.cuddlelamp; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_VERSION = 5.0; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks"); }; };
-    };
-    rootObject = 000000000000000000000001;
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		000000000000000000000009 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000006 /* AppDelegate.swift */; };
+		E7876168DA3C8B8B8D9FF00E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0FEB5161647A301DFAEC01A8 /* PrivacyInfo.xcprivacy */; };
+		FB5037632E1AE84AB7863989 /* libPods-CuddleLamp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = EB8212A7B4E87D6EC5E70F8C /* libPods-CuddleLamp.a */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		000000000000000000000006 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		000000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		000000000000000000000008 /* CuddleLamp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = CuddleLamp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0FEB5161647A301DFAEC01A8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = ../PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		93D331DF29CDD068AF262FF8 /* Pods-CuddleLamp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CuddleLamp.debug.xcconfig"; path = "Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp.debug.xcconfig"; sourceTree = "<group>"; };
+		DA69C34E400A888F597ED081 /* Pods-CuddleLamp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CuddleLamp.release.xcconfig"; path = "Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp.release.xcconfig"; sourceTree = "<group>"; };
+		EB8212A7B4E87D6EC5E70F8C /* libPods-CuddleLamp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-CuddleLamp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		00000000000000000000000E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB5037632E1AE84AB7863989 /* libPods-CuddleLamp.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		000000000000000000000003 = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000004 /* CuddleLamp */,
+				000000000000000000000005 /* Products */,
+				A32D4525F39319E7C33EB98C /* Pods */,
+				9C0B7CF1D3844065D580C4D2 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		000000000000000000000004 /* CuddleLamp */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000006 /* AppDelegate.swift */,
+				000000000000000000000007 /* Info.plist */,
+				0FEB5161647A301DFAEC01A8 /* PrivacyInfo.xcprivacy */,
+			);
+			path = CuddleLamp;
+			sourceTree = "<group>";
+		};
+		000000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000008 /* CuddleLamp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9C0B7CF1D3844065D580C4D2 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				EB8212A7B4E87D6EC5E70F8C /* libPods-CuddleLamp.a */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		A32D4525F39319E7C33EB98C /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				93D331DF29CDD068AF262FF8 /* Pods-CuddleLamp.debug.xcconfig */,
+				DA69C34E400A888F597ED081 /* Pods-CuddleLamp.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		000000000000000000000002 /* CuddleLamp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 00000000000000000000000C /* Build configuration list for PBXNativeTarget "CuddleLamp" */;
+			buildPhases = (
+				EF367F87C8AC228002E31D7D /* [CP] Check Pods Manifest.lock */,
+				00000000000000000000000D /* Sources */,
+				00000000000000000000000E /* Frameworks */,
+				00000000000000000000000F /* Resources */,
+				000000000000000000000010 /* Bundle React Native code and images */,
+				0F7E4DD347E57A5BFA732098 /* [CP] Embed Pods Frameworks */,
+				6FF68BDC847AC13750E24255 /* [CP] Copy Pods Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CuddleLamp;
+			productName = CuddleLamp;
+			productReference = 000000000000000000000008 /* CuddleLamp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		000000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = 00000000000000000000000B /* Build configuration list for PBXProject "CuddleLamp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = ru;
+			knownRegions = (
+				ru,
+				Base,
+			);
+			mainGroup = 000000000000000000000003;
+			productRefGroup = 000000000000000000000005 /* Products */;
+			projectDirPath = "";
+			targets = (
+				000000000000000000000002 /* CuddleLamp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		00000000000000000000000F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E7876168DA3C8B8B8D9FF00E /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		000000000000000000000010 /* Bundle React Native code and images */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			name = "Bundle React Native code and images";
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\nRN_SCRIPTS=\"$PROJECT_DIR/../node_modules/react-native/scripts\"\n/bin/sh \"$RN_SCRIPTS/xcode/with-environment.sh\" \"$RN_SCRIPTS/react-native-xcode.sh\"\n";
+		};
+		0F7E4DD347E57A5BFA732098 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		6FF68BDC847AC13750E24255 /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-resources-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Copy Pods Resources";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		EF367F87C8AC228002E31D7D /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-CuddleLamp-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		00000000000000000000000D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				000000000000000000000009 /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		000000000000000000000015 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_ENABLE_MODULES = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CFLAGS = (
+					"$(inherited)",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(inherited)",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
+				PODFILE_DIR = "$(SRCROOT)";
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				USE_HERMES = true;
+			};
+			name = Debug;
+		};
+		000000000000000000000016 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_ENABLE_MODULES = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				OTHER_CFLAGS = (
+					"$(inherited)",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(inherited)",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
+				PODFILE_DIR = "$(SRCROOT)";
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
+				SDKROOT = iphoneos;
+				USE_HERMES = true;
+			};
+			name = Release;
+		};
+		000000000000000000000017 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 93D331DF29CDD068AF262FF8 /* Pods-CuddleLamp.debug.xcconfig */;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = CuddleLamp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cuddlelamp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		000000000000000000000018 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = DA69C34E400A888F597ED081 /* Pods-CuddleLamp.release.xcconfig */;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				INFOPLIST_FILE = CuddleLamp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cuddlelamp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		00000000000000000000000B /* Build configuration list for PBXProject "CuddleLamp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000015 /* Debug */,
+				000000000000000000000016 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		00000000000000000000000C /* Build configuration list for PBXNativeTarget "CuddleLamp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000000000017 /* Debug */,
+				000000000000000000000018 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 000000000000000000000001 /* Project object */;
 }

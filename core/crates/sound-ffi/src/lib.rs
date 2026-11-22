@@ -184,18 +184,24 @@ pub unsafe extern "C" fn sound_engine_last_error(engine: *const SoundEngine) -> 
     }
 }
 
-/// Заполняет `frames` отсчётов в каждом из двух буферов. Вызывается только из аудиопотока.
+/// Заполняет `frames` отсчётов в каждом из двух буферов.
+/// При нулевом размере обрабатывает команды без продвижения звука.
 ///
 /// # Safety
 ///
 /// `engine` — живой движок; `left` и `right` указывают на непересекающиеся буферы
-/// длиной не меньше `frames`.
+/// длиной не меньше `frames`. При нулевом размере указатели могут быть пустыми.
+/// У движка может быть только один поток рендера в каждый момент времени.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sound_engine_render(engine: *mut SoundEngine, left: *mut f32, right: *mut f32, frames: u32) {
     let Some(engine) = (unsafe { engine.as_ref() }) else {
         return;
     };
-    if left.is_null() || right.is_null() || frames == 0 {
+    if frames == 0 {
+        unsafe { &mut *engine.processor.get() }.render(&mut [], &mut []);
+        return;
+    }
+    if left.is_null() || right.is_null() {
         return;
     }
     let processor = unsafe { &mut *engine.processor.get() };
@@ -251,6 +257,7 @@ pub unsafe extern "C" fn sound_engine_copy_snapshot(engine: *mut SoundEngine) ->
     let snapshot = serde_json::json!({
         "status": state.status as u8,
         "remainingSeconds": state.timer_remaining_seconds,
+        "timerExpired": state.timer_expired,
         "rms": state.level,
         "appliedCommand": state.applied_command,
         "scene": scene,
@@ -340,6 +347,10 @@ mod tests {
             assert_eq!(sound_engine_play(engine), SOUND_ENGINE_OK);
             assert_eq!(sound_engine_queued_command(engine), 4);
             assert_eq!(sound_engine_get_state(engine).applied_command, 0);
+            sound_engine_render(engine, std::ptr::null_mut(), std::ptr::null_mut(), 0);
+            let state = sound_engine_get_state(engine);
+            assert_eq!(state.applied_command, 4);
+            assert_eq!(state.timer_remaining_seconds, 600.0);
             for _ in 0..20 {
                 sound_engine_render(engine, left.as_mut_ptr(), right.as_mut_ptr(), 4800);
             }

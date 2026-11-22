@@ -121,3 +121,13 @@ fn rejects_empty_chords() {
 fn rejects_inverted_chord_duration() {
     assert_invalid(&broken_scene(r#""chordSeconds": [2, 3]"#, r#""chordSeconds": [3, 2]"#), "chordSeconds");
 }
+
+#[test]
+fn rejects_out_of_range_root_and_chord_notes() {
+    let mut scene = Scene::from_json(TEST_SCENE).unwrap();
+    scene.harmony.root = 2_000_000_000;
+    assert_invalid(&serde_json::to_string(&scene).unwrap(), "root");
+    scene.harmony.root = 60;
+    scene.harmony.chords[0][0] = i32::MAX;
+    assert_invalid(&serde_json::to_string(&scene).unwrap(), "диапазон MIDI");
+}

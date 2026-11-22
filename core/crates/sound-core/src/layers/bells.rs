@@ -128,7 +128,7 @@ impl BellsLayer {
     fn strike(&mut self, harmony: &Harmony) {
         let degree = harmony.scale[self.rng.index(harmony.scale.len())];
         let octave = self.octaves[self.rng.index(self.octaves.len())];
-        let frequency = midi_to_hz((harmony.root + degree + octave) as f32);
+        let frequency = midi_to_hz((i64::from(harmony.root) + i64::from(degree) + i64::from(octave)) as f32);
         let (min_release, max_release) = ordered(self.params.get(RELEASE_MIN), self.params.get(RELEASE_MAX));
         let duration = self.rng.range(min_release, max_release);
         let [min_velocity, max_velocity] = VELOCITY_RANGE;

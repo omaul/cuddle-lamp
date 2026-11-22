@@ -5,6 +5,7 @@
 #import <MediaPlayer/MediaPlayer.h>
 #include "SoundEngineModule.h"
 #include "SoundEngineControl.h"
+#include <algorithm>
 #include <atomic>
 #include <stdexcept>
 
@@ -13,7 +14,7 @@ using facebook::react::SoundEngineModule;
 
 @interface CuddleLampAudioOutput : NSObject
 - (void)startWhenAvailable;
-- (BOOL)startOutput;
+- (BOOL)prepareOutput;
 - (void)prepareTransport:(BOOL)playing;
 - (MPRemoteCommandHandlerStatus)handleRemotePlaying:(BOOL)playing;
 - (MPRemoteCommandHandlerStatus)toggleRemotePlayback;
@@ -27,6 +28,8 @@ using facebook::react::SoundEngineModule;
   id _remotePause;
   id _remoteToggle;
   NSTimer *_nowPlayingTimer;
+  NSTimer *_idleTimer;
+  float _sampleRate;
   int32_t _lastStatus;
   NSString *_lastTitle;
   std::atomic_bool _isInterrupted;
@@ -46,25 +49,19 @@ using facebook::react::SoundEngineModule;
 
 - (void)startWhenAvailable
 {
-  if (!_engine && ![self startOutput]) {
+  if (!_engine && ![self prepareOutput]) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
       [self startWhenAvailable];
     });
   }
 }
 
-- (BOOL)startOutput
+- (BOOL)prepareOutput
 {
-  AVAudioSession *session = [AVAudioSession sharedInstance];
-  NSError *error = nil;
-  if (![session setCategory:AVAudioSessionCategoryPlayback error:&error] ||
-      ![session setActive:YES error:&error]) {
-    return NO;
-  }
-
   _audio = [[AVAudioEngine alloc] init];
   double sampleRate = [_audio.outputNode inputFormatForBus:0].sampleRate;
-  _engine = sound_engine_create(static_cast<float>(sampleRate));
+  _sampleRate = static_cast<float>(sampleRate);
+  _engine = sound_engine_create(_sampleRate);
   if (!_engine) {
     _audio = nil;
     return NO;
@@ -88,14 +85,12 @@ using facebook::react::SoundEngineModule;
       }];
   [_audio attachNode:source];
   [_audio connect:source to:_audio.mainMixerNode format:format];
-  if (![_audio startAndReturnError:&error]) {
-    [_audio stop];
-    _audio = nil;
-    sound_engine_destroy(_engine);
-    _engine = nullptr;
-    return NO;
-  }
   SoundEngineControl::shared().attach(_engine);
+  __weak CuddleLampAudioOutput *output = self;
+  _idleTimer = [NSTimer timerWithTimeInterval:0.03 repeats:YES block:^(NSTimer *) {
+    [output processIdleCommands];
+  }];
+  [[NSRunLoop mainRunLoop] addTimer:_idleTimer forMode:NSRunLoopCommonModes];
   [self installSystemControls];
   return YES;
 }
@@ -135,21 +130,61 @@ using facebook::react::SoundEngineModule;
   });
 }
 
+- (void)processIdleCommands
+{
+  if (_audio.isRunning) {
+    return;
+  }
+  // До Play и во время прерывания команды обрабатывает главный поток.
+  // При работающем выводе движок принадлежит аудиоколбэку.
+  [_audio stop];
+  if (sound_engine_get_state(_engine).status != SOUND_ENGINE_STATUS_STOPPING) {
+    sound_engine_render(_engine, nullptr, nullptr, 0);
+    return;
+  }
+  float left[1024], right[1024];
+  const auto frames = static_cast<uint32_t>(std::min(1024.0f, _sampleRate * 0.03f));
+  sound_engine_render(_engine, left, right, frames);
+}
+
+- (BOOL)activateOutput
+{
+  AVAudioSession *session = [AVAudioSession sharedInstance];
+  if (!_engine || _isInterrupted) {
+    return NO;
+  }
+  if (_audio.isRunning) {
+    return YES;
+  }
+  if (![session setCategory:AVAudioSessionCategoryPlayback error:nullptr] ||
+      ![session setActive:YES error:nullptr]) {
+    return NO;
+  }
+  if ([_audio startAndReturnError:nullptr]) {
+    return YES;
+  }
+  [session setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nullptr];
+  return NO;
+}
+
 - (void)prepareTransport:(BOOL)playing
 {
   _resumeAfterInterruption = false;
   if (!playing) {
     return;
   }
-  if (_isInterrupted) {
-    throw std::runtime_error("Аудиосессия прервана");
+  __block BOOL started = NO;
+  void (^activate)(void) = ^{
+    started = [self activateOutput];
+  };
+  if ([NSThread isMainThread]) {
+    activate();
+  } else {
+    dispatch_sync(dispatch_get_main_queue(), activate);
   }
-  dispatch_async(dispatch_get_main_queue(), ^{
-    if (!self->_isInterrupted && !self->_audio.isRunning &&
-        [[AVAudioSession sharedInstance] setActive:YES error:nullptr]) {
-      [self->_audio startAndReturnError:nullptr];
-    }
-  });
+  if (!started) {
+    throw std::runtime_error("Не удалось запустить аудиовывод");
+  }
 }
 
 - (MPRemoteCommandHandlerStatus)handleRemotePlaying:(BOOL)playing
@@ -220,6 +255,7 @@ using facebook::react::SoundEngineModule;
       _resumeAfterInterruption = true;
     }
     [CuddleLampAudioOutput setSystemPlaying:NO];
+    [_audio stop];
     return;
   }
 
@@ -227,8 +263,7 @@ using facebook::react::SoundEngineModule;
   _isInterrupted = NO;
   const BOOL shouldResume = _resumeAfterInterruption.exchange(false) &&
       (options & AVAudioSessionInterruptionOptionShouldResume);
-  if ([[AVAudioSession sharedInstance] setActive:YES error:nullptr] &&
-      (_audio.isRunning || [_audio startAndReturnError:nullptr]) && shouldResume) {
+  if (shouldResume && [self activateOutput]) {
     [CuddleLampAudioOutput setSystemPlaying:YES];
   }
 }
@@ -249,8 +284,9 @@ using facebook::react::SoundEngineModule;
 - (void)handleConfigurationChange:(NSNotification *)notification
 {
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (!self->_audio.isRunning && !self->_isInterrupted) {
-      [self->_audio startAndReturnError:nullptr];
+    if (!self->_audio.isRunning &&
+        sound_engine_get_state(self->_engine).status == SOUND_ENGINE_STATUS_PLAYING) {
+      [self activateOutput];
     }
   });
 }
@@ -259,6 +295,7 @@ using facebook::react::SoundEngineModule;
 {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   [_nowPlayingTimer invalidate];
+  [_idleTimer invalidate];
   MPRemoteCommandCenter *commands = [MPRemoteCommandCenter sharedCommandCenter];
   if (_remotePlay) {
     [commands.playCommand removeTarget:_remotePlay];
@@ -299,7 +336,8 @@ using facebook::react::SoundEngineModule;
     [output prepareTransport:playing];
   });
 #else
-  return nullptr;
+  // React Native требует объект от зарегистрированного поставщика даже в тестовой сборке.
+  return std::make_shared<facebook::react::TurboModule>(params.moduleName, params.jsInvoker);
 #endif
 }
 @end

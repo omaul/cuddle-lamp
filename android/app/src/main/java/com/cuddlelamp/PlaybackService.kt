@@ -25,6 +25,7 @@ class PlaybackService : Service() {
     private lateinit var session: MediaSession
     private var lastStatus = -1
     private var lastTitle = ""
+    private var stoppedAfterTimer = false
     private val audioRouteReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
@@ -35,7 +36,7 @@ class PlaybackService : Service() {
     private val update = object : Runnable {
         override fun run() {
             publishPlayback()
-            handler.postDelayed(this, 500)
+            if (!stoppedAfterTimer) handler.postDelayed(this, 500)
         }
     }
 
@@ -82,10 +83,12 @@ class PlaybackService : Service() {
     override fun onDestroy() {
         unregisterReceiver(audioRouteReceiver)
         handler.removeCallbacks(update)
-        pausePlayback()
+        if (!stoppedAfterTimer) {
+            pausePlayback()
+            abandonFocus()
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         session.release()
-        abandonFocus()
         super.onDestroy()
     }
 
@@ -100,7 +103,14 @@ class PlaybackService : Service() {
         lastStatus = status
         lastTitle = title
         val isAudible = status == 2 || status == 3
-        if (wasAudible && status == 1 && !resumeAfterFocusLoss) abandonFocus()
+        if (wasAudible && status == 1 && !resumeAfterFocusLoss) {
+            abandonFocus()
+            if (snapshot.optBoolean("timerExpired")) {
+                stoppedAfterTimer = true
+                stopSelf()
+                return
+            }
+        }
         session.setPlaybackState(
             PlaybackState.Builder()
                 .setActions(

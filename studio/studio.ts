@@ -1,4 +1,5 @@
 import { createEngine, readEngineError } from './engine';
+import { createSignalCharts, drawParameterCurve, mapParameter } from './charts';
 import { PROCESSOR_NAME } from './audio-protocol';
 import type { AudioCommand, AudioReply, AudioRequest } from './audio-protocol';
 import workletUrl from './worklet.ts?worker&url';
@@ -9,7 +10,9 @@ import sleep from '../scenes/sleep.json?raw';
 type Scene = {
     id: string;
     name: string;
-    knobs?: { id: string; name: string; default?: number; targets: { param: string }[] }[];
+    seed?: number;
+    layers: { id: string; type: 'pad' | 'noise' | 'bells'; params?: Record<string, number> }[];
+    knobs?: { id: string; name: string; default?: number; targets: { param: string; from: number; to: number; curve?: 'linear' | 'exponential' }[] }[];
 };
 
 type ActiveScene = {
@@ -24,6 +27,27 @@ type PendingReply = {
     reject: (error: unknown) => void;
 };
 
+const layerSettings = {
+    pad: { name: 'Пэд', description: 'Протяжные аккорды и гармонический фон.', level: 0.12 },
+    noise: { name: 'Шум', description: 'Непрерывная шуршащая текстура.', level: 0.05 },
+    bells: { name: 'Колокольчики', description: 'Отдельные звенящие ноты.', level: 0.07 },
+};
+const knobDescriptions: Record<string, string> = {
+    brightness: 'Больше высоких частот в пэде и шуме.',
+    density: 'Колокольчики звучат чаще.',
+    space: 'Больше отражений, и звуковой хвост дольше затихает.',
+};
+
+const parameterLabels: Record<string, [string, string]> = {
+    'pad.cutoff': ['Срез пэда', 'Гц'],
+    'noise.cutoff': ['Срез шума', 'Гц'],
+    'bells.gapMin': ['Мин. интервал', 'с'],
+    'bells.gapMax': ['Макс. интервал', 'с'],
+    'scene.reverbLevel': ['Реверберация', ''],
+    'scene.reverbDecay': ['Затухание', 'с'],
+};
+const formatParameter = new Intl.NumberFormat('ru', { maximumSignificantDigits: 4 });
+const referenceKnobs = (JSON.parse(focus) as Scene).knobs;
 const presets = new Map(Object.entries({ focus, relax, sleep }));
 
 export function getElement<T extends HTMLElement = HTMLElement>(id: string): T {
@@ -39,10 +63,21 @@ const save = getElement<HTMLButtonElement>('save');
 const play = getElement<HTMLButtonElement>('play');
 const volume = getElement<HTMLInputElement>('volume');
 const status = getElement('status');
+const config = getElement<HTMLDialogElement>('config');
+const showConfig = getElement<HTMLButtonElement>('show-config');
+const configNotice = getElement('config-notice');
 const audioStatus = getElement('audio-status');
 const knobs = getElement('knobs');
-const canvas = getElement<HTMLCanvasElement>('scope');
-const plot = canvas.getContext('2d')!;
+const mixer = getElement('mixer');
+const mixerHint = getElement('mixer-hint');
+const activeScene = getElement('active-scene');
+const playLabel = getElement('play-label');
+const volumeValue = getElement<HTMLOutputElement>('volume-value');
+const charts = createSignalCharts(
+    getElement<HTMLCanvasElement>('scope').getContext('2d')!,
+    getElement<HTMLCanvasElement>('spectrum').getContext('2d')!,
+    getElement<HTMLCanvasElement>('spectrogram').getContext('2d')!,
+);
 const meter = getElement<HTMLMeterElement>('level');
 const decibels = getElement<HTMLOutputElement>('decibels');
 const encoder = new TextEncoder();
@@ -59,6 +94,11 @@ let busy = false;
 function report(element: HTMLElement, message: string, error = false) {
     element.textContent = message;
     element.dataset.error = String(error);
+    if (element === status) {
+        configNotice.textContent = error ? message : '';
+        configNotice.hidden = !error;
+        configNotice.dataset.error = String(error);
+    }
 }
 
 function errorText(error: unknown) {
@@ -68,13 +108,25 @@ function errorText(error: unknown) {
 }
 
 function updateButtons() {
-    apply.disabled = busy || !validator;
+    const hasDraft = !active || active.text !== source.value;
+    const hasUnappliedChanges = Boolean(active && hasDraft);
+    showConfig.dataset.draft = String(hasUnappliedChanges);
+    showConfig.setAttribute('aria-label', hasUnappliedChanges ? 'Конфигурация JSON, есть правки' : 'Конфигурация JSON');
+    apply.disabled = busy || !validator || !hasDraft;
     play.disabled = busy || !active;
     save.disabled = busy || !active || active.text !== source.value;
     preset.disabled = busy;
     getElement<HTMLButtonElement>('open').disabled = busy;
     source.disabled = busy || !validator;
     knobs.inert = busy;
+    for (const slider of mixer.querySelectorAll('input')) {
+        slider.disabled = busy || hasDraft || hasUnsafeSeed(active?.scene);
+    }
+    mixerHint.textContent = active && hasDraft
+        ? 'Примените изменения в JSON, чтобы продолжить настройку уровней.'
+        : hasUnsafeSeed(active?.scene)
+            ? 'У этой сцены длинный сид. Уровни можно изменить в JSON без потери точности.'
+            : 'Уровни слоёв записываются в JSON сцены.';
 }
 
 async function run(operation: () => Promise<void>, target = status) {
@@ -90,6 +142,10 @@ async function run(operation: () => Promise<void>, target = status) {
         busy = false;
         updateButtons();
     }
+}
+
+function hasUnsafeSeed(scene: Scene | undefined) {
+    return scene?.seed !== undefined && !Number.isSafeInteger(scene.seed);
 }
 
 function updateKnobs(current: ActiveScene) {
@@ -112,46 +168,155 @@ function updateKnobs(current: ActiveScene) {
         slider.min = '0';
         slider.max = '1';
         slider.step = '0.001';
-        slider.value = String(knob.default ?? 0.5);
+        slider.value = String(current.positions.get(knob.id) ?? knob.default ?? 0.5);
         label.htmlFor = slider.id;
         label.textContent = knob.name;
         const reading = document.createElement('output');
         reading.htmlFor.add(slider.id);
-        const targets = document.createElement('p');
-        targets.textContent = knob.targets.map(({ param }) => param).join(' · ');
+        const targets = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = 'Затронутые параметры';
+        const parameters = document.createElement('code');
+        parameters.textContent = knob.targets.map(({ param }) => param).join(' · ');
+        targets.append(summary, parameters);
+        const description = document.createElement('p');
+        const knownDescription = hasKnownKnobTargets(knob)
+            ? knobDescriptions[knob.id]
+            : undefined;
+        description.textContent = knownDescription ?? 'Меняет параметры, связанные с этой ручкой в JSON.';
+        const values = document.createElement('dl');
+        values.className = 'parameter-values';
+        const parameterValues = knob.targets.map((target) => {
+            const [name, unit] = parameterLabels[target.param] ?? [target.param, ''];
+            const entry = document.createElement('div');
+            const term = document.createElement('dt');
+            term.textContent = name;
+            const result = document.createElement('dd');
+            const curve = document.createElement('canvas');
+            curve.width = 360;
+            curve.height = 40;
+            curve.setAttribute('aria-hidden', 'true');
+            const plot = curve.getContext('2d')!;
+            entry.append(term, result, curve);
+            values.append(entry);
+            return { target, result, unit, plot };
+        });
         const update = (send: boolean) => {
             const value = slider.valueAsNumber;
             reading.textContent = `${Math.round(value * 100)} %`;
+            for (const { target, result, unit, plot } of parameterValues) {
+                const mapped = mapParameter(target, value);
+                result.textContent = [formatParameter.format(mapped), unit].filter(Boolean).join(' ');
+                drawParameterCurve(plot, target, value);
+            }
             if (!send) return;
             current.positions.set(knob.id, value);
-            audio?.send('knob', encoder.encode(knob.id), value).catch((error) => {
+            audio?.send('knob', encoder.encode(knob.id), value).then(markAudibleChange).catch((error) => {
                 report(audioStatus, errorText(error), true);
             });
         };
         slider.addEventListener('input', () => update(true));
         update(false);
         heading.append(label, reading);
-        section.append(heading, slider, targets);
+        section.append(heading, description, slider, values, targets);
         knobs.append(section);
     }
 }
 
-async function applyScene() {
+function hasKnownKnobTargets(knob: NonNullable<Scene['knobs']>[number]) {
+    const reference = referenceKnobs?.find(({ id }) => id === knob.id);
+    return reference?.targets.length === knob.targets.length
+        && reference.targets.every(({ param, from, to }) => knob.targets.some((target) =>
+            target.param === param && Math.sign(target.to - target.from) === Math.sign(to - from)));
+}
+
+function updateMixer(current: ActiveScene) {
+    mixer.replaceChildren();
+    const controlled = new Set(current.scene.knobs?.flatMap(({ targets }) => targets.map(({ param }) => param)));
+    for (const [index, layer] of current.scene.layers.entries()) {
+        const settings = layerSettings[layer.type];
+        const section = document.createElement('div');
+        section.className = 'knob';
+        const heading = document.createElement('div');
+        heading.className = 'reading';
+        const label = document.createElement('label');
+        label.textContent = layer.id === layer.type ? settings.name : `${settings.name} · ${layer.id}`;
+        const description = document.createElement('p');
+        if (controlled.has(`${layer.id}.level`)) {
+            description.textContent = 'Уровнем этого слоя управляет ручка сцены.';
+            section.append(label, description);
+            mixer.append(section);
+            continue;
+        }
+
+        description.textContent = settings.description;
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.id = `layer-level-${index}`;
+        slider.min = '0';
+        slider.max = '1';
+        slider.step = '0.001';
+        slider.value = String(layer.params?.level ?? settings.level);
+        label.htmlFor = slider.id;
+        const reading = document.createElement('output');
+        reading.htmlFor.add(slider.id);
+        reading.value = `${Number((slider.valueAsNumber * 100).toFixed(1))} %`;
+        slider.addEventListener('input', () => {
+            reading.value = `${Number((slider.valueAsNumber * 100).toFixed(1))} %`;
+        });
+        slider.addEventListener('change', async () => {
+            const shouldRestoreFocus = document.activeElement === slider;
+            await run(async () => {
+                const draft = JSON.parse(current.text) as Scene;
+                const editedLayer = draft.layers[index];
+                editedLayer.params ??= {};
+                editedLayer.params.level = slider.valueAsNumber;
+                source.value = `${JSON.stringify(draft, null, 4)}\n`;
+                await applyScene(current.positions);
+            });
+            if (shouldRestoreFocus) document.getElementById(slider.id)?.focus({ preventScroll: true });
+        });
+        heading.append(label, reading);
+        section.append(heading, description, slider);
+        mixer.append(section);
+    }
+}
+
+function updatePlaybackLabel() {
+    playLabel.textContent = playing ? 'Пауза' : 'Слушать';
+    play.dataset.playing = String(playing);
+}
+
+async function applyScene(positions = new Map<string, number>()) {
     if (!validator) throw new Error('Звуковое ядро ещё не загружено.');
     const text = source.value;
     const bytes = encoder.encode(text);
     validator.load(bytes);
     validator.render(...validationFrame);
     const scene = JSON.parse(text) as Scene;
-    if (audio) await audio.send('load', bytes);
-    active = { scene, text, bytes, positions: new Map() };
+    if (audio) {
+        await audio.send('load', bytes);
+        markAudibleChange();
+        for (const [id, value] of positions) {
+            await audio.send('knob', encoder.encode(id), value);
+        }
+    }
+    active = { scene, text, bytes, positions };
+    activeScene.textContent = scene.name;
+    if (preset.value === '') {
+        const customOption = preset.querySelector('option[value=""]');
+        if (customOption) {
+            customOption.textContent = scene.name;
+        }
+    }
     updateKnobs(active);
-    report(status, `Сцена «${scene.name}» прошла проверку и применена.`);
+    updateMixer(active);
+    report(status, 'Конфигурация применена.');
 }
 
 function showDraft() {
     if (!active || active.text !== source.value) {
-        report(status, 'Есть изменения. Проверьте и примените сцену перед экспортом.');
+        report(status, 'Есть изменения. Примените их для прослушивания и экспорта.');
     } else {
         report(status, `Сцена «${active.scene.name}» применена.`);
     }
@@ -165,28 +330,11 @@ async function loadPreset() {
     await applyScene();
 }
 
-function draw(signal: Float32Array | null, peak: number) {
-    const { width, height } = canvas;
-    plot.clearRect(0, 0, width, height);
-    plot.strokeStyle = '#373b42';
-    for (const y of [height / 4, height / 2, height * 3 / 4]) {
-        plot.beginPath();
-        plot.moveTo(0, y);
-        plot.lineTo(width, y);
-        plot.stroke();
-    }
-    if (signal) {
-        plot.strokeStyle = '#ffbb86';
-        plot.lineWidth = 2;
-        plot.beginPath();
-        for (let x = 0; x < width; x++) {
-            const value = signal[Math.floor(x * signal.length / width)];
-            const y = (1 - value) * height / 2;
-            if (x === 0) plot.moveTo(x, y);
-            else plot.lineTo(x, y);
-        }
-        plot.stroke();
-    }
+function markAudibleChange() {
+    if (playing) charts.markChange();
+}
+
+function updatePeak(peak: number) {
     meter.value = peak;
     decibels.value = peak ? `${(20 * Math.log10(peak)).toFixed(1)} дБFS` : '−∞ дБFS';
 }
@@ -208,6 +356,11 @@ async function openAudio() {
         node.connect(context.destination);
         node.connect(splitter);
         analysers.forEach((analyser, channel) => splitter.connect(analyser, channel));
+        const spectrumAnalyser = context.createAnalyser();
+        spectrumAnalyser.fftSize = 4096;
+        spectrumAnalyser.maxDecibels = -20;
+        node.connect(spectrumAnalyser);
+        const frequencies = new Uint8Array(spectrumAnalyser.frequencyBinCount);
         const signals = analysers.map((analyser) => new Float32Array(analyser.fftSize));
 
         let sequence = 0;
@@ -227,9 +380,10 @@ async function openAudio() {
             if (audio?.context === context) {
                 audio = undefined;
                 playing = false;
-                play.textContent = 'Слушать';
+                updatePlaybackLabel();
                 report(audioStatus, failed.message, true);
-                draw(null, 0);
+                charts.reset();
+                updatePeak(0);
                 void context.close();
             }
         };
@@ -252,7 +406,7 @@ async function openAudio() {
             await send('knob', encoder.encode(id), value);
         }
 
-        function updateMeter() {
+        function updateMeter(now: number) {
             if (failed || context.state === 'closed') return;
             let peak = 0;
             analysers.forEach((analyser, index) => {
@@ -260,7 +414,9 @@ async function openAudio() {
                 analyser.getFloatTimeDomainData(signal);
                 for (const sample of signal) peak = Math.max(peak, Math.abs(sample));
             });
-            draw(signals[0], peak);
+            spectrumAnalyser.getByteFrequencyData(frequencies);
+            charts.update(signals[0], frequencies, context.sampleRate / spectrumAnalyser.fftSize, now);
+            updatePeak(peak);
             requestAnimationFrame(updateMeter);
         }
         requestAnimationFrame(updateMeter);
@@ -270,6 +426,67 @@ async function openAudio() {
         throw error;
     }
 }
+
+showConfig.addEventListener('click', () => config.showModal());
+const brandCarousel = getElement<HTMLButtonElement>('brand-carousel');
+const brandTrack = brandCarousel.querySelector<HTMLElement>('.brand-track')!;
+const brandPattern = brandTrack.querySelector<HTMLElement>('.brand-pattern')!;
+const brandItem = brandPattern.querySelector<HTMLElement>('.brand-item')!;
+const brandLogoUrls = [
+    ...Array.from(brandItem.querySelectorAll('img'), (icon) => icon.src),
+    ...['crest', 'step', 'ripple', 'pair', 'fall', 'hush', 'signal', 'drift', 'spark', 'breath'].map((name) =>
+        `${import.meta.env.BASE_URL}brand/${name}.png`),
+];
+const brandLogosPerWord = brandItem.querySelectorAll('img').length;
+const brandCopy = brandPattern.cloneNode() as HTMLElement;
+brandPattern.after(brandCopy);
+let brandRepeatCount = 0;
+const brandResizeObserver = new ResizeObserver(() => {
+    if (!brandCarousel.clientHeight) return;
+    const gap = Number.parseFloat(getComputedStyle(brandPattern).rowGap);
+    const itemHeight = brandItem.getBoundingClientRect().height + gap;
+    const repeatCount = Math.max(
+        Math.ceil(brandCarousel.clientHeight / itemHeight),
+        Math.ceil(brandLogoUrls.length / brandLogosPerWord),
+    );
+    if (repeatCount === brandRepeatCount) return;
+
+    brandRepeatCount = repeatCount;
+    brandPattern.replaceChildren(brandItem);
+    for (let index = 1; index < repeatCount; index++) {
+        const word = brandItem.cloneNode(true) as HTMLElement;
+        word.querySelectorAll('img').forEach((icon, logoIndex) => {
+            icon.src = brandLogoUrls[(index * brandLogosPerWord + logoIndex) % brandLogoUrls.length];
+        });
+        brandPattern.append(word);
+    }
+    brandCopy.replaceChildren(...Array.from(brandPattern.children, (item) => item.cloneNode(true)));
+    const pixelsPerSecond = 32;
+    brandTrack.style.setProperty('--brand-duration', `${itemHeight * repeatCount / pixelsPerSecond}s`);
+});
+brandResizeObserver.observe(brandCarousel);
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+brandCarousel.disabled = reducedMotion.matches;
+reducedMotion.addEventListener('change', ({ matches }) => {
+    brandCarousel.disabled = matches;
+});
+brandCarousel.addEventListener('click', () => {
+    const isPaused = brandCarousel.getAttribute('aria-pressed') === 'true';
+    brandCarousel.setAttribute('aria-pressed', String(!isPaused));
+});
+
+const scrollbarTimers = new WeakMap<Element, number>();
+document.addEventListener('scroll', ({ target }) => {
+    const scrollContainer = target === document ? document.documentElement : target;
+    if (!(scrollContainer instanceof Element)) return;
+
+    scrollContainer.classList.add('is-scrolling');
+    window.clearTimeout(scrollbarTimers.get(scrollContainer));
+    scrollbarTimers.set(scrollContainer, window.setTimeout(() => {
+        scrollContainer.classList.remove('is-scrolling');
+        scrollbarTimers.delete(scrollContainer);
+    }, 600));
+}, { capture: true, passive: true });
 
 source.addEventListener('input', showDraft);
 apply.addEventListener('click', () => run(applyScene));
@@ -299,15 +516,16 @@ play.addEventListener('click', () => run(async () => {
     await audio.context.resume();
     await audio.send('playback', !playing);
     playing = !playing;
-    play.textContent = playing ? 'Пауза' : 'Слушать';
+    updatePlaybackLabel();
 }, audioStatus));
 volume.addEventListener('input', () => {
-    audio?.send('volume', volume.valueAsNumber).catch((error) => {
+    volumeValue.value = `${Math.round(volume.valueAsNumber * 100)} %`;
+    audio?.send('volume', volume.valueAsNumber).then(markAudibleChange).catch((error) => {
         report(audioStatus, errorText(error), true);
     });
 });
 
-draw(null, 0);
+charts.reset();
 void run(async () => {
     const response = await fetch(`${import.meta.env.BASE_URL}sound_web.wasm`);
     if (!response.ok || response.headers.get('content-type')?.includes('text/html')) {

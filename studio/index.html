@@ -10,58 +10,111 @@
 </head>
 <body>
     <main>
-        <header class="masthead">
-            <span>cuddle-lamp</span>
-            <h1>Студия сцен</h1>
-        </header>
         <div class="layout">
-            <section class="panel editor" aria-labelledby="editor-title">
-                <div class="heading">
-                    <h2 id="editor-title">Сцена</h2>
-                    <div class="actions">
-                        <label class="sr-only" for="preset">Готовая сцена</label>
-                        <select id="preset">
-                            <option value="focus">Фокус</option>
-                            <option value="relax">Отдых</option>
-                            <option value="sleep">Сон</option>
-                            <option value="" disabled>Свой файл</option>
-                        </select>
-                        <button id="open" type="button">Открыть JSON</button>
-                        <input id="file" type="file" accept=".json,application/json" hidden>
+            <div class="monitor preview">
+                <section class="panel listening" aria-label="Предпрослушивание">
+                    <div class="scene-picker">
+                        <div class="scene-choice">
+                            <label for="preset">Готовые сцены</label>
+                            <select id="preset">
+                                <option value="focus">Фокус</option>
+                                <option value="relax">Отдых</option>
+                                <option value="sleep">Сон</option>
+                                <option value="" disabled>Свой файл</option>
+                            </select>
+                        </div>
+                        <div class="actions">
+                            <button id="show-config" type="button" aria-haspopup="dialog" aria-label="Конфигурация JSON">
+                                <span class="config-label">Конфигурация </span>JSON
+                            </button>
+                            <button id="play" class="primary transport" type="button" disabled>
+                                <span id="play-icon" aria-hidden="true"></span><span id="play-label">Слушать</span>
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <label for="source" class="sr-only">JSON сцены</label>
-                <textarea id="source" spellcheck="false" autocomplete="off" autocapitalize="off" disabled></textarea>
-                <p id="status" role="status">Загружаем сцену…</p>
-                <div class="actions">
-                    <button id="apply" class="primary" type="button" disabled>Проверить и применить</button>
-                    <button id="save" type="button" disabled>Скачать JSON</button>
-                </div>
-            </section>
-            <div class="monitor">
-                <section class="panel" aria-labelledby="audio-title">
-                    <h2 id="audio-title">Предпрослушивание</h2>
-                    <div class="scope">
-                        <canvas id="scope" width="640" height="180" aria-hidden="true"></canvas>
+                    <p id="active-scene" class="sr-only" role="status">Загрузка сцены…</p>
+                    <div class="visualization" role="group" aria-label="Визуализация сигнала">
+                        <figure class="chart waveform-chart">
+                            <figcaption class="chart-heading"><strong>Волна</strong><span>Амплитуда во времени</span></figcaption>
+                            <canvas id="scope" width="880" height="132" aria-hidden="true"></canvas>
+                        </figure>
+                        <figure class="chart spectrum-chart">
+                            <figcaption class="chart-heading"><strong>Спектр</strong><span>Энергия по частотам сейчас</span></figcaption>
+                            <canvas id="spectrum" width="880" height="170" aria-hidden="true"></canvas>
+                            <div class="frequency-axis" aria-hidden="true">
+                                <span>40 Гц</span><span>250 Гц</span><span>1,6 кГц</span><span>10 кГц</span>
+                            </div>
+                        </figure>
+                        <figure class="chart spectrogram-chart">
+                            <figcaption class="chart-heading"><strong>Спектрограмма</strong><span>Как спектр менялся за 12 секунд</span></figcaption>
+                            <div class="spectrogram">
+                                <div class="spectrogram-axis" aria-hidden="true"><span>10 кГц</span><span>1,6 кГц</span><span>250 Гц</span><span>40 Гц</span></div>
+                                <div class="spectrogram-plot">
+                                    <canvas id="spectrogram" width="120" height="60" aria-hidden="true"></canvas>
+                                    <div class="frequency-axis" aria-hidden="true"><span>−12 с</span><span>−6 с</span><span>Сейчас</span></div>
+                                </div>
+                            </div>
+                            <p class="chart-caption">Чем светлее цвет, тем выше уровень. Метки сверху показывают, когда менялись настройки.</p>
+                        </figure>
                     </div>
-                    <div class="reading">
+                    <div class="reading signal">
                         <label for="level">Пик сигнала</label>
+                        <meter id="level" min="0" max="1" value="0"></meter>
                         <output id="decibels">−∞ дБFS</output>
                     </div>
-                    <meter id="level" min="0" max="1" value="0"></meter>
-                    <div class="playback">
-                        <button id="play" class="primary" type="button" disabled>Слушать</button>
+                    <div class="reading master">
                         <label for="volume">Громкость</label>
                         <input id="volume" type="range" min="0" max="1" step="0.01" value="0.65">
+                        <output id="volume-value" for="volume">65 %</output>
                     </div>
                     <p id="audio-status" role="status"></p>
                 </section>
-                <section class="panel" aria-labelledby="knobs-title">
-                    <h2 id="knobs-title">Ручки сцены</h2>
-                    <div id="knobs"></div>
+            </div>
+            <div class="monitor settings">
+                <section class="panel controls" aria-labelledby="knobs-title">
+                    <h2 id="knobs-title">Характер звука</h2>
+                    <p>Ручки действуют сразу. Точка на каждой кривой показывает текущее положение, слева — минимум ручки, справа — максимум.</p>
+                    <div id="knobs" class="control-list"></div>
+                </section>
+                <section class="panel controls" aria-labelledby="mixer-title">
+                    <h2 id="mixer-title">Микшер слоёв</h2>
+                    <p id="mixer-hint">Уровни слоёв записываются в JSON сцены.</p>
+                    <div id="mixer" class="control-list"></div>
                 </section>
             </div>
         </div>
+        <p id="config-notice" class="config-notice" role="status" hidden></p>
+        <footer class="brand"><img src="./favicon.png" width="24" height="24" alt=""> <span>куддл</span></footer>
+        <button id="brand-carousel" class="brand-carousel" type="button" aria-label="Приостановить движение ленты «куддл»" aria-pressed="false">
+            <span class="brand-track" aria-hidden="true">
+                <span class="brand-pattern">
+                    <span class="brand-item">
+                        <span>к</span><img src="./favicon.png" width="24" height="24" alt="">
+                        <span>у</span><img src="./brand/rise.png" width="24" height="24" alt="">
+                        <span>д</span><img src="./brand/echo.png" width="24" height="24" alt="">
+                        <span>д</span><img src="./brand/dip.png" width="24" height="24" alt="">
+                        <span>л</span><img src="./brand/swell.png" width="24" height="24" alt="">
+                    </span>
+                </span>
+            </span>
+        </button>
+        <dialog id="config" class="panel editor" aria-labelledby="editor-title">
+            <div class="heading">
+                <h2 id="editor-title">Конфигурация <span>JSON</span></h2>
+                <div class="actions">
+                    <button id="open" type="button">Открыть JSON</button>
+                    <input id="file" type="file" accept=".json,application/json" hidden>
+                    <button id="save" type="button" disabled>Скачать JSON</button>
+                    <form method="dialog"><button type="submit">Закрыть</button></form>
+                </div>
+            </div>
+            <label for="source" class="sr-only">JSON сцены</label>
+            <textarea id="source" spellcheck="false" autocomplete="off" autocapitalize="off" disabled></textarea>
+            <div class="editor-footer">
+                <p id="status" role="status">Загружаем сцену…</p>
+                <button id="apply" class="primary" type="button" disabled>Проверить и применить</button>
+            </div>
+        </dialog>
     </main>
 </body>
 </html>

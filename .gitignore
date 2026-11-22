@@ -13,6 +13,16 @@ CLAUDE.md
 
 # JS
 node_modules/
+/ios/Pods/
+/ios/build/
+/ios/.xcode.env.local
+xcuserdata/
+/android/.gradle/
+/android/.kotlin/
+/android/local.properties
+/android/build/
+/android/app/build/
+/android/app/.cxx/
 
 # Rust
 /core/target/

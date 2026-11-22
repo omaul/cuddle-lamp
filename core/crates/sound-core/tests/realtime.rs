@@ -86,3 +86,34 @@ fn render_does_not_allocate() {
     controller.pause().unwrap();
     assert_eq!(count_allocations_while_rendering(&mut processor, 3.0), 0, "пауза");
 }
+
+#[test]
+fn render_does_not_free_queued_scenes_when_controller_stops_reading() {
+    let (mut controller, mut processor) = create(SAMPLE_RATE);
+    for _ in 0..24 {
+        controller.load_scene_json(TEST_SCENE).unwrap();
+    }
+    drop(controller);
+    assert_eq!(count_allocations_while_rendering(&mut processor, 0.1), 0);
+}
+
+#[test]
+fn render_returns_scenes_after_the_controller_drains_the_return_queue() {
+    let (mut controller, mut processor) = create(SAMPLE_RATE);
+    controller.load_scene_json(TEST_SCENE).unwrap();
+    controller.play().unwrap();
+    assert_eq!(count_allocations_while_rendering(&mut processor, 0.1), 0);
+
+    for _ in 0..24 {
+        controller.load_scene_json(OTHER_SCENE).unwrap();
+    }
+    assert_eq!(count_allocations_while_rendering(&mut processor, 0.1), 0);
+
+    let (state, _) = controller.snapshot();
+    assert_eq!(state.applied_command, 26);
+    assert_eq!(count_allocations_while_rendering(&mut processor, 0.1), 0);
+    controller.snapshot();
+    controller.load_scene_json(TEST_SCENE).unwrap();
+    assert_eq!(count_allocations_while_rendering(&mut processor, 0.1), 0);
+    assert_eq!(controller.state().applied_command, 27);
+}

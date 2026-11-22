@@ -1,0 +1,36 @@
+apply plugin: "com.android.application"
+apply plugin: "com.facebook.react"
+
+react {
+    libraryName = "CuddleLampSpecs"
+    codegenJavaPackageName = "com.cuddlelamp"
+    autolinkLibrariesWithApp()
+}
+
+def nativeAudio = providers.environmentVariable("CUDDLE_LAMP_NATIVE_AUDIO").orNull == "1"
+
+android {
+    namespace "com.cuddlelamp"
+    compileSdk 37
+    ndkVersion "27.1.12297006"
+
+    defaultConfig {
+        applicationId "com.cuddlelamp"
+        minSdk = nativeAudio ? 26 : 24
+        targetSdkVersion 36
+        versionCode 1
+        versionName "0.1.0"
+    }
+    if (nativeAudio) {
+        externalNativeBuild {
+            cmake {
+                path "src/main/jni/CMakeLists.txt"
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:hermes-android")
+}

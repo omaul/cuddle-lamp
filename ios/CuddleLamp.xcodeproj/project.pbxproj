@@ -1,0 +1,28 @@
+// !$*UTF8*$!
+{
+    archiveVersion = 1;
+    classes = {};
+    objectVersion = 56;
+    objects = {
+        000000000000000000000001 = { isa = PBXProject; mainGroup = 000000000000000000000003; productRefGroup = 000000000000000000000005; buildConfigurationList = 00000000000000000000000B; compatibilityVersion = "Xcode 14.0"; developmentRegion = ru; knownRegions = (ru, Base); targets = (000000000000000000000002); };
+        000000000000000000000002 = { isa = PBXNativeTarget; name = CuddleLamp; productName = CuddleLamp; productReference = 000000000000000000000008; productType = "com.apple.product-type.application"; buildConfigurationList = 00000000000000000000000C; buildPhases = (00000000000000000000000D, 00000000000000000000000E, 00000000000000000000000F, 000000000000000000000010); };
+        000000000000000000000003 = { isa = PBXGroup; children = (000000000000000000000004, 000000000000000000000005); sourceTree = "<group>"; };
+        000000000000000000000004 = { isa = PBXGroup; children = (000000000000000000000006, 000000000000000000000007); path = CuddleLamp; sourceTree = "<group>"; };
+        000000000000000000000005 = { isa = PBXGroup; children = (000000000000000000000008); name = Products; sourceTree = "<group>"; };
+        000000000000000000000006 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+        000000000000000000000007 = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+        000000000000000000000008 = { isa = PBXFileReference; explicitFileType = wrapper.application; path = CuddleLamp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+        000000000000000000000009 = { isa = PBXBuildFile; fileRef = 000000000000000000000006; };
+        00000000000000000000000B = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000015, 000000000000000000000016); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        00000000000000000000000C = { isa = XCConfigurationList; buildConfigurations = (000000000000000000000017, 000000000000000000000018); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+        00000000000000000000000D = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000009); runOnlyForDeploymentPostprocessing = 0; };
+        00000000000000000000000E = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        00000000000000000000000F = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+        000000000000000000000010 = { isa = PBXShellScriptBuildPhase; buildActionMask = 2147483647; files = (); name = "Bundle React Native code and images"; runOnlyForDeploymentPostprocessing = 0; shellPath = /bin/sh; shellScript = "set -e\nRN_SCRIPTS=\"$PROJECT_DIR/../node_modules/react-native/scripts\"\n/bin/sh \"$RN_SCRIPTS/xcode/with-environment.sh\" \"$RN_SCRIPTS/react-native-xcode.sh\"\n"; };
+        000000000000000000000015 = { isa = XCBuildConfiguration; name = Debug; buildSettings = { CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.4; SDKROOT = iphoneos; ENABLE_USER_SCRIPT_SANDBOXING = NO; ONLY_ACTIVE_ARCH = YES; }; };
+        000000000000000000000016 = { isa = XCBuildConfiguration; name = Release; buildSettings = { CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.4; SDKROOT = iphoneos; ENABLE_USER_SCRIPT_SANDBOXING = NO; }; };
+        000000000000000000000017 = { isa = XCBuildConfiguration; name = Debug; buildSettings = { INFOPLIST_FILE = CuddleLamp/Info.plist; PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = com.cuddlelamp; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_VERSION = 5.0; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks"); SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; }; };
+        000000000000000000000018 = { isa = XCBuildConfiguration; name = Release; buildSettings = { INFOPLIST_FILE = CuddleLamp/Info.plist; PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = com.cuddlelamp; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_VERSION = 5.0; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0; LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks"); }; };
+    };
+    rootObject = 000000000000000000000001;
+}

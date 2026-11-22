@@ -1,0 +1,23 @@
+require_relative '../node_modules/react-native/scripts/react_native_pods'
+
+platform :ios, min_ios_version_supported
+prepare_react_native_project!
+
+target 'CuddleLamp' do
+  config = use_native_modules!
+
+  use_react_native!(
+    :path => config[:reactNativePath],
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+
+  audio_variant = ENV['CUDDLE_LAMP_NATIVE_AUDIO'] == '1' ? 'Native' : 'Preview'
+  if audio_variant == 'Native' && !File.directory?(File.expand_path('../core/target/ios/SoundEngine.xcframework', __dir__))
+    raise 'Нет SoundEngine.xcframework. Выполните npm run core:ios из корня проекта.'
+  end
+  pod "CuddleLampAudio/#{audio_variant}", :path => '..'
+
+  post_install do |installer|
+    react_native_post_install(installer, config[:reactNativePath], :mac_catalyst_enabled => false)
+  end
+end

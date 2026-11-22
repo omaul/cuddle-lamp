@@ -5,7 +5,9 @@
     "scripts": {
         "start": "react-native start",
         "ios": "react-native run-ios",
+        "android": "react-native run-android",
         "core:ios": "bash scripts/build-core-ios.sh",
+        "core:android": "bash scripts/build-core-android.sh",
         "lint": "eslint .",
         "type-check": "tsc --noEmit",
         "test": "jest",
@@ -20,6 +22,7 @@
         "@babel/core": "7.29.7",
         "@babel/runtime": "7.29.7",
         "@react-native-community/cli": "20.2.0",
+        "@react-native-community/cli-platform-android": "20.2.0",
         "@react-native-community/cli-platform-ios": "20.2.0",
         "@react-native/babel-preset": "0.87.1",
         "@react-native/eslint-config": "0.87.1",

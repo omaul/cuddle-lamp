@@ -14,6 +14,6 @@ mod scene;
 
 pub use engine::{
     Controller, EngineError, PAUSE_FADE_SECONDS, PLAY_FADE_SECONDS, PlaybackStatus, PlayerState, Processor,
-    SCENE_CROSSFADE_SECONDS, StateReader, TIMER_FADE_SECONDS, create,
+    SCENE_CROSSFADE_SECONDS, SceneState, StateReader, TIMER_FADE_SECONDS, create,
 };
 pub use scene::{BellsSpec, Curve, Harmony, KnobSpec, KnobTarget, LayerSpec, Scene, SceneError, SimpleLayerSpec};

@@ -9,6 +9,7 @@ name = "sound_engine"
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+serde_json.workspace = true
 sound-core.workspace = true
 
 [lints]

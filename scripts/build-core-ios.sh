@@ -58,14 +58,27 @@ cargo build \
     --target "${DEVICE_TARGET}" \
     --target "${SIMULATOR_TARGET}"
 
-# xcodebuild не перезаписывает существующий xcframework, поэтому старую сборку удаляем
-rm -rf "${XCFRAMEWORK_PATH}"
 mkdir -p "${OUTPUT_DIR}"
+PACKAGING_DIR="$(mktemp -d "${OUTPUT_DIR}/.package.XXXXXX")"
+PREVIOUS_FRAMEWORK="${PACKAGING_DIR}/previous.xcframework"
+
+cleanup() {
+    if [[ -d "${PREVIOUS_FRAMEWORK}" && ! -e "${XCFRAMEWORK_PATH}" ]]; then
+        mv "${PREVIOUS_FRAMEWORK}" "${XCFRAMEWORK_PATH}" || return
+    fi
+    rm -rf "${PACKAGING_DIR}"
+}
+trap cleanup EXIT
 
 echo "Упаковываем в ${XCFRAMEWORK_PATH#"${REPO_DIR}/"}"
 xcodebuild -create-xcframework \
     -library "${CORE_DIR}/target/${DEVICE_TARGET}/release/${LIBRARY_NAME}" -headers "${HEADERS_DIR}" \
     -library "${CORE_DIR}/target/${SIMULATOR_TARGET}/release/${LIBRARY_NAME}" -headers "${HEADERS_DIR}" \
-    -output "${XCFRAMEWORK_PATH}" >/dev/null
+    -output "${PACKAGING_DIR}/SoundEngine.xcframework" >/dev/null
+
+if [[ -e "${XCFRAMEWORK_PATH}" ]]; then
+    mv "${XCFRAMEWORK_PATH}" "${PREVIOUS_FRAMEWORK}"
+fi
+mv "${PACKAGING_DIR}/SoundEngine.xcframework" "${XCFRAMEWORK_PATH}"
 
 echo "Готово, $(du -sh "${XCFRAMEWORK_PATH}" | awk '{print $1}')"

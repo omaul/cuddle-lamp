@@ -119,6 +119,27 @@ fn timer_fades_out_and_pauses() {
 }
 
 #[test]
+fn timer_counts_only_playing_frames() {
+    let (mut controller, mut processor) = create(SAMPLE_RATE);
+    controller.load_scene_json(TEST_SCENE).unwrap();
+    controller.set_timer(Some(10.0)).unwrap();
+    let frame_count = seconds_to_frames(1.0);
+    let mut left = vec![0.0; frame_count];
+    let mut right = vec![0.0; frame_count];
+
+    processor.render(&mut left, &mut right);
+    assert_eq!(controller.state().timer_remaining_seconds, Some(10.0));
+
+    controller.play().unwrap();
+    processor.render(&mut left, &mut right);
+    assert_eq!(controller.state().timer_remaining_seconds, Some(9.0));
+
+    controller.pause().unwrap();
+    processor.render(&mut left, &mut right);
+    assert_eq!(controller.state().timer_remaining_seconds, Some(9.0));
+}
+
+#[test]
 fn disabled_timer_does_not_stop_playback() {
     let (mut controller, mut processor) = create(SAMPLE_RATE);
     controller.load_scene_json(TEST_SCENE).unwrap();

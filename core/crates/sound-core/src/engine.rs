@@ -1,8 +1,11 @@
+use std::collections::{BTreeMap, VecDeque};
 use std::f32::consts::FRAC_PI_2;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+
+use serde::Serialize;
 
 use crate::dsp::{Compressor, Reverb, Smoothed, soft_clip};
 use crate::layers::LayerFrame;
@@ -16,7 +19,8 @@ pub const SCENE_CROSSFADE_SECONDS: f32 = 4.0;
 
 const COMMAND_CAPACITY: usize = 256;
 const GARBAGE_CAPACITY: usize = 8;
-const STALLED_GARBAGE_SLOTS: usize = 4;
+// Кроме очереди команд, аудиопоток может держать текущую и уходящую сцены.
+const SCENE_CAPACITY: usize = COMMAND_CAPACITY + 2;
 const VOLUME_SMOOTHING_SECONDS: f32 = 0.05;
 /// Общее усиление после компрессора (+11 дБ). При `gain` сцены 1.0 громкость выхода
 /// около −20 dBFS RMS, а пики остаются ниже −3 dBFS.
@@ -56,12 +60,35 @@ pub struct PlayerState {
     pub timer_remaining_seconds: Option<f32>,
     /// Сглаженная громкость выхода (RMS), например для анимации.
     pub level: f32,
+    /// Номер последней команды, которую обработал аудиопоток.
+    pub applied_command: u32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SceneState {
+    pub scene_id: String,
+    pub name: String,
+    pub knobs: BTreeMap<String, f32>,
+    pub knob_labels: Vec<KnobLabel>,
+}
+
+#[derive(Serialize)]
+pub struct KnobLabel {
+    pub id: String,
+    pub name: String,
+}
+
+enum SceneChange {
+    Load(SceneState),
+    Knob(String, f32),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EngineError {
     Scene(SceneError),
     UnknownKnob(String),
+    SceneChanged,
     /// Аудиопоток не забирает команды: звуковая система остановлена или не успевает.
     QueueFull,
     /// Сторона аудиопотока уничтожена.
@@ -73,6 +100,7 @@ impl fmt::Display for EngineError {
         match self {
             Self::Scene(error) => error.fmt(formatter),
             Self::UnknownKnob(knob_id) => write!(formatter, "в текущей сцене нет ручки «{knob_id}»"),
+            Self::SceneChanged => write!(formatter, "сцена сменилась во время настройки"),
             Self::QueueFull => write!(formatter, "очередь команд переполнена, аудиопоток их не забирает"),
             Self::ProcessorGone => write!(formatter, "аудиопоток движка уже уничтожен"),
         }
@@ -100,6 +128,8 @@ struct SharedState {
     timer_remaining_milliseconds: AtomicU32,
     level: AtomicU32,
     volume: AtomicU32,
+    applied_command: AtomicU32,
+    snapshot_version: AtomicU32,
 }
 
 /// Читает состояние плеера из любого потока.
@@ -110,11 +140,21 @@ pub struct StateReader {
 
 impl StateReader {
     pub fn state(&self) -> PlayerState {
-        let timer_milliseconds = self.shared.timer_remaining_milliseconds.load(Ordering::Relaxed);
-        PlayerState {
-            status: PlaybackStatus::from_u8(self.shared.status.load(Ordering::Relaxed)),
-            timer_remaining_seconds: (timer_milliseconds != NO_TIMER).then(|| timer_milliseconds as f32 / 1000.0),
-            level: f32::from_bits(self.shared.level.load(Ordering::Relaxed)),
+        loop {
+            let version = self.shared.snapshot_version.load(Ordering::SeqCst);
+            if version % 2 != 0 {
+                continue;
+            }
+            let timer_milliseconds = self.shared.timer_remaining_milliseconds.load(Ordering::SeqCst);
+            let state = PlayerState {
+                status: PlaybackStatus::from_u8(self.shared.status.load(Ordering::SeqCst)),
+                timer_remaining_seconds: (timer_milliseconds != NO_TIMER).then(|| timer_milliseconds as f32 / 1000.0),
+                level: f32::from_bits(self.shared.level.load(Ordering::SeqCst)),
+                applied_command: self.shared.applied_command.load(Ordering::SeqCst),
+            };
+            if version == self.shared.snapshot_version.load(Ordering::SeqCst) {
+                return state;
+            }
         }
     }
 }
@@ -128,6 +168,8 @@ pub fn create(sample_rate: f32) -> (Controller, Processor) {
         timer_remaining_milliseconds: AtomicU32::new(NO_TIMER),
         level: AtomicU32::new(0f32.to_bits()),
         volume: AtomicU32::new(1f32.to_bits()),
+        applied_command: AtomicU32::new(0),
+        snapshot_version: AtomicU32::new(0),
     });
 
     let controller = Controller {
@@ -136,11 +178,18 @@ pub fn create(sample_rate: f32) -> (Controller, Processor) {
         state: StateReader { shared: Arc::clone(&shared) },
         sample_rate,
         knob_ids: Vec::new(),
+        queued_scene_id: None,
+        outstanding_scenes: 0,
+        queued_command: 0,
+        scene_changes: VecDeque::new(),
+        confirmed_scene: None,
     };
     let processor = Processor {
         commands: command_receiver,
         garbage: garbage_sender,
         stalled_garbage: std::array::from_fn(|_| None),
+        stalled_count: 0,
+        applied_command: 0,
         shared,
         sample_rate,
         status: PlaybackStatus::Idle,
@@ -170,15 +219,39 @@ pub struct Controller {
     state: StateReader,
     sample_rate: f32,
     knob_ids: Vec<String>,
+    queued_scene_id: Option<String>,
+    outstanding_scenes: usize,
+    queued_command: u32,
+    scene_changes: VecDeque<(u32, SceneChange)>,
+    confirmed_scene: Option<SceneState>,
 }
 
 impl Controller {
     /// Проверяет сцену, собирает её и передаёт в аудиопоток. Если звук играет,
     /// новая сцена плавно сменяет старую.
     pub fn load_scene(&mut self, scene: &Scene) -> Result<(), EngineError> {
+        self.collect_garbage();
+        if self.outstanding_scenes == SCENE_CAPACITY {
+            return Err(EngineError::QueueFull);
+        }
         let runtime = SceneRuntime::new(scene, self.sample_rate)?;
         self.send(Command::LoadScene(Box::new(runtime)))?;
+        self.outstanding_scenes += 1;
         self.knob_ids = scene.knobs.iter().map(|knob| knob.id.clone()).collect();
+        self.queued_scene_id = Some(scene.id.clone());
+        self.scene_changes.push_back((
+            self.queued_command,
+            SceneChange::Load(SceneState {
+                scene_id: scene.id.clone(),
+                name: scene.name.clone(),
+                knobs: scene.knobs.iter().map(|knob| (knob.id.clone(), knob.default)).collect(),
+                knob_labels: scene
+                    .knobs
+                    .iter()
+                    .map(|knob| KnobLabel { id: knob.id.clone(), name: knob.name.clone() })
+                    .collect(),
+            }),
+        ));
         Ok(())
     }
 
@@ -201,7 +274,20 @@ impl Controller {
         let Some(index) = self.knob_ids.iter().position(|id| id == knob_id) else {
             return Err(EngineError::UnknownKnob(knob_id.to_owned()));
         };
-        self.send(Command::SetKnob { index, position })
+        self.send(Command::SetKnob { index, position })?;
+        if position.is_finite() {
+            self.scene_changes
+                .push_back((self.queued_command, SceneChange::Knob(knob_id.to_owned(), position.clamp(0.0, 1.0))));
+        }
+        Ok(())
+    }
+
+    /// Ставит ручку только в той сцене, для которой была отправлена команда.
+    pub fn set_scene_knob(&mut self, scene_id: &str, knob_id: &str, position: f32) -> Result<(), EngineError> {
+        if self.queued_scene_id.as_deref() != Some(scene_id) {
+            return Err(EngineError::SceneChanged);
+        }
+        self.set_knob(knob_id, position)
     }
 
     /// Включает таймер: через `seconds` секунд игры звук плавно затихнет и встанет на паузу.
@@ -224,17 +310,50 @@ impl Controller {
         self.state.clone()
     }
 
+    pub fn queued_command(&self) -> u32 {
+        self.queued_command
+    }
+
+    pub fn snapshot(&mut self) -> (PlayerState, Option<&SceneState>) {
+        self.collect_garbage();
+        let state = self.state();
+        self.update_confirmed_scene(state.applied_command);
+        (state, self.confirmed_scene.as_ref())
+    }
+
+    fn update_confirmed_scene(&mut self, applied_command: u32) {
+        while self
+            .scene_changes
+            .front()
+            .is_some_and(|(sequence, _)| applied_command.wrapping_sub(*sequence) < (1 << 31))
+        {
+            match self.scene_changes.pop_front().unwrap().1 {
+                SceneChange::Load(scene) => self.confirmed_scene = Some(scene),
+                SceneChange::Knob(id, value) => {
+                    if let Some(scene) = &mut self.confirmed_scene {
+                        scene.knobs.insert(id, value);
+                    }
+                }
+            }
+        }
+    }
+
     fn send(&mut self, command: Command) -> Result<(), EngineError> {
         self.collect_garbage();
+        self.update_confirmed_scene(self.state().applied_command);
         self.commands.try_send(command).map_err(|error| match error {
             TrySendError::Full(_) => EngineError::QueueFull,
             TrySendError::Disconnected(_) => EngineError::ProcessorGone,
-        })
+        })?;
+        self.queued_command = self.queued_command.wrapping_add(1);
+        Ok(())
     }
 
     /// Освобождает сцены, которые аудиопоток вернул после смены. Освобождать их в аудиопотоке нельзя.
     fn collect_garbage(&mut self) {
-        while self.garbage.try_recv().is_ok() {}
+        while self.garbage.try_recv().is_ok() {
+            self.outstanding_scenes -= 1;
+        }
     }
 }
 
@@ -242,7 +361,9 @@ impl Controller {
 pub struct Processor {
     commands: Receiver<Command>,
     garbage: SyncSender<Box<SceneRuntime>>,
-    stalled_garbage: [Option<Box<SceneRuntime>>; STALLED_GARBAGE_SLOTS],
+    stalled_garbage: [Option<Box<SceneRuntime>>; SCENE_CAPACITY],
+    stalled_count: usize,
+    applied_command: u32,
     shared: Arc<SharedState>,
     sample_rate: f32,
     status: PlaybackStatus,
@@ -291,7 +412,11 @@ impl Processor {
     }
 
     fn handle_commands(&mut self) {
-        while let Ok(command) = self.commands.try_recv() {
+        for _ in 0..COMMAND_CAPACITY {
+            let Ok(command) = self.commands.try_recv() else {
+                break;
+            };
+            self.applied_command = self.applied_command.wrapping_add(1);
             match command {
                 Command::LoadScene(runtime) => self.load(runtime),
                 Command::Play => self.start_playing(),
@@ -427,16 +552,16 @@ impl Processor {
         else {
             return;
         };
-        if let Some(slot) = self.stalled_garbage.iter_mut().find(|slot| slot.is_none()) {
-            *slot = Some(runtime);
-        }
-        // Если и запасные ячейки заняты, сцена освобождается здесь: редкая пауза лучше утечки
+        // Управляющая сторона ограничивает число сцен, которые ещё не вернулись из аудиопотока.
+        self.stalled_garbage[self.stalled_count] = Some(runtime);
+        self.stalled_count += 1;
     }
 
     fn release_stalled_garbage(&mut self) {
-        for slot in &mut self.stalled_garbage {
+        while self.stalled_count > 0 {
+            let slot = &mut self.stalled_garbage[self.stalled_count - 1];
             let Some(runtime) = slot.take() else {
-                continue;
+                unreachable!("занятая ячейка должна содержать сцену");
             };
             if let Err(TrySendError::Full(runtime) | TrySendError::Disconnected(runtime)) =
                 self.garbage.try_send(runtime)
@@ -444,6 +569,7 @@ impl Processor {
                 *slot = Some(runtime);
                 return;
             }
+            self.stalled_count -= 1;
         }
     }
 
@@ -453,8 +579,11 @@ impl Processor {
         let timer_milliseconds = self.timer_samples_left.map_or(NO_TIMER, |samples| {
             ((samples as f64 / f64::from(self.sample_rate)) * 1000.0).min(f64::from(NO_TIMER - 1)) as u32
         });
-        self.shared.status.store(self.status as u8, Ordering::Relaxed);
-        self.shared.timer_remaining_milliseconds.store(timer_milliseconds, Ordering::Relaxed);
-        self.shared.level.store(self.level.to_bits(), Ordering::Relaxed);
+        self.shared.snapshot_version.fetch_add(1, Ordering::SeqCst);
+        self.shared.status.store(self.status as u8, Ordering::SeqCst);
+        self.shared.timer_remaining_milliseconds.store(timer_milliseconds, Ordering::SeqCst);
+        self.shared.level.store(self.level.to_bits(), Ordering::SeqCst);
+        self.shared.applied_command.store(self.applied_command, Ordering::SeqCst);
+        self.shared.snapshot_version.fetch_add(1, Ordering::SeqCst);
     }
 }

@@ -25,6 +25,7 @@ extern "C" {
 #define SOUND_ENGINE_ERROR_UNKNOWN_KNOB 3
 #define SOUND_ENGINE_ERROR_QUEUE_FULL 4
 #define SOUND_ENGINE_ERROR_PROCESSOR_GONE 5
+#define SOUND_ENGINE_ERROR_SCENE_CHANGED 6
 
 #define SOUND_ENGINE_STATUS_IDLE 0
 #define SOUND_ENGINE_STATUS_PAUSED 1
@@ -40,6 +41,8 @@ typedef struct SoundEngineState {
     float timer_remaining_seconds;
     /* Сглаженная громкость выхода (RMS) для анимации. */
     float level;
+    /* Номер последней команды, которую обработал аудиопоток. */
+    uint32_t applied_command;
 } SoundEngineState;
 
 /* Создаёт движок. Возвращает NULL, если частота дискретизации вне 8–384 кГц. */
@@ -60,6 +63,9 @@ int32_t sound_engine_pause(SoundEngine *engine);
 /* Ставит ручку текущей сцены в положение от 0 до 1. */
 int32_t sound_engine_set_knob(SoundEngine *engine, const char *knob_id, float position);
 
+/* Ставит ручку только в сцене, для которой отправлена команда. Положение должно быть конечным. */
+int32_t sound_engine_set_scene_knob(SoundEngine *engine, const char *scene_id, const char *knob_id, float position);
+
 /* Включает таймер на seconds секунд игры, ноль или отрицательное значение выключает его. */
 int32_t sound_engine_set_timer(SoundEngine *engine, float seconds);
 
@@ -77,6 +83,15 @@ void sound_engine_render(SoundEngine *engine, float *left, float *right, uint32_
 
 /* Состояние плеера. Можно вызывать из любого потока. */
 SoundEngineState sound_engine_get_state(const SoundEngine *engine);
+
+/* Номер последней команды в очереди. Вызывается на управляющей стороне. */
+uint32_t sound_engine_queued_command(const SoundEngine *engine);
+
+/* Снимок в JSON с подтверждённой сценой и значениями ручек. Вызывается на управляющей стороне. */
+char *sound_engine_copy_snapshot(SoundEngine *engine);
+
+/* Освобождает строку, полученную через sound_engine_copy_snapshot. */
+void sound_engine_free_snapshot(char *snapshot);
 
 #ifdef __cplusplus
 }

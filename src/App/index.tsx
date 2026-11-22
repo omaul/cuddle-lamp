@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Platform, SafeAreaView, StatusBar, View } from 'react-native';
+import { StatusBar, View } from 'react-native';
 import PlayerContainer from '../PlayerContainer';
 import nativeSoundEngine from '../native/specs/NativeSoundEngine';
 import { scenes } from '../player/catalog';
@@ -22,13 +22,12 @@ const App: React.FC = () => {
         }
         return preview ?? createUnavailablePlayer(scenes[0]);
     });
-    const Screen = Platform.OS === 'ios' ? SafeAreaView : View;
 
     return (
-        <Screen style={styles.screen}>
+        <View style={styles.screen}>
             <StatusBar barStyle="light-content" />
             <PlayerContainer player={player} onScenario={preview?.setScenario} />
-        </Screen>
+        </View>
     );
 };
 

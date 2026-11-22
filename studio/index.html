@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Студия сцен · cuddle-lamp</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png">
+    <link rel="stylesheet" href="./style.css">
+    <script type="module" src="./studio.ts"></script>
+</head>
+<body>
+    <main>
+        <header class="masthead">
+            <span>cuddle-lamp</span>
+            <h1>Студия сцен</h1>
+        </header>
+        <div class="layout">
+            <section class="panel editor" aria-labelledby="editor-title">
+                <div class="heading">
+                    <h2 id="editor-title">Сцена</h2>
+                    <div class="actions">
+                        <label class="sr-only" for="preset">Готовая сцена</label>
+                        <select id="preset">
+                            <option value="focus">Фокус</option>
+                            <option value="relax">Отдых</option>
+                            <option value="sleep">Сон</option>
+                            <option value="" disabled>Свой файл</option>
+                        </select>
+                        <button id="open" type="button">Открыть JSON</button>
+                        <input id="file" type="file" accept=".json,application/json" hidden>
+                    </div>
+                </div>
+                <label for="source" class="sr-only">JSON сцены</label>
+                <textarea id="source" spellcheck="false" autocomplete="off" autocapitalize="off" disabled></textarea>
+                <p id="status" role="status">Загружаем сцену…</p>
+                <div class="actions">
+                    <button id="apply" class="primary" type="button" disabled>Проверить и применить</button>
+                    <button id="save" type="button" disabled>Скачать JSON</button>
+                </div>
+            </section>
+            <div class="monitor">
+                <section class="panel" aria-labelledby="audio-title">
+                    <h2 id="audio-title">Предпрослушивание</h2>
+                    <div class="scope">
+                        <canvas id="scope" width="640" height="180" aria-hidden="true"></canvas>
+                    </div>
+                    <div class="reading">
+                        <label for="level">Пик сигнала</label>
+                        <output id="decibels">−∞ дБFS</output>
+                    </div>
+                    <meter id="level" min="0" max="1" value="0"></meter>
+                    <div class="playback">
+                        <button id="play" class="primary" type="button" disabled>Слушать</button>
+                        <label for="volume">Громкость</label>
+                        <input id="volume" type="range" min="0" max="1" step="0.01" value="0.65">
+                    </div>
+                    <p id="audio-status" role="status"></p>
+                </section>
+                <section class="panel" aria-labelledby="knobs-title">
+                    <h2 id="knobs-title">Ручки сцены</h2>
+                    <div id="knobs"></div>
+                </section>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

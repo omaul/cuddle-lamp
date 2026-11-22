@@ -1,0 +1,46 @@
+name: Студия сцен · GitHub Pages
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: studio-pages
+    cancel-in-progress: false
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  cache: npm
+                  cache-dependency-path: studio/package-lock.json
+            - run: npm ci
+              working-directory: studio
+            - run: rustup target add wasm32-unknown-unknown
+            - run: npm run build
+              working-directory: studio
+            - uses: actions/upload-pages-artifact@v3
+              with:
+                  path: studio/dist
+
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        permissions:
+            pages: write
+            id-token: write
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - name: Опубликовать студию
+              id: deployment
+              uses: actions/deploy-pages@v4

@@ -98,6 +98,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sound-web"
+version = "0.1.0"
+dependencies = [
+ "sound-core",
+]
+
+[[package]]
 name = "syn"
 version = "3.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -232,3 +232,18 @@ fn queued_scene_preserves_the_current_crossfade() {
         render(&mut reference, seconds_to_frames(5.0), 512),
     );
 }
+
+#[test]
+fn bell_meter_follows_the_sounding_scene() {
+    let (mut controller, mut processor) = create_playing(TEST_SCENE);
+    render(&mut processor, seconds_to_frames(1.1), 512);
+    assert!(controller.state().bells.iter().all(|note| note.level == 0.0));
+    render(&mut processor, seconds_to_frames(0.2), 512);
+    let notes = controller.state().bells;
+    let active: Vec<_> = notes.iter().filter(|note| note.level > 0.0).collect();
+    assert_eq!(active.len(), 1);
+    assert!([72, 74, 76, 79, 81, 84, 86, 88, 91, 93].contains(&active[0].midi));
+    controller.load_scene_json(OTHER_SCENE).unwrap();
+    render(&mut processor, 64, 64);
+    assert!(controller.state().bells.iter().all(|note| note.level == 0.0));
+}

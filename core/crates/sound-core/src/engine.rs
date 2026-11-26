@@ -8,7 +8,7 @@ use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use serde::Serialize;
 
 use crate::dsp::{Compressor, Reverb, Smoothed, soft_clip};
-use crate::layers::LayerFrame;
+use crate::layers::{BellNote, LayerFrame, VOICE_COUNT};
 use crate::runtime::SceneRuntime;
 use crate::scene::{Scene, SceneError};
 
@@ -62,6 +62,7 @@ pub struct PlayerState {
     pub timer_expired: bool,
     /// Сглаженная громкость выхода (RMS), например для анимации.
     pub level: f32,
+    pub bells: [BellNote; VOICE_COUNT],
     /// Номер последней команды, которую обработал аудиопоток.
     pub applied_command: u32,
 }
@@ -130,6 +131,8 @@ struct SharedState {
     timer_remaining_milliseconds: AtomicU32,
     timer_expired: AtomicBool,
     level: AtomicU32,
+    bells: [(AtomicU8, AtomicU32); VOICE_COUNT],
+    bell_count: AtomicU8,
     volume: AtomicU32,
     applied_command: AtomicU32,
     snapshot_version: AtomicU32,
@@ -149,7 +152,15 @@ impl StateReader {
                 continue;
             }
             let timer_milliseconds = self.shared.timer_remaining_milliseconds.load(Ordering::SeqCst);
+            let mut bells = [BellNote::default(); VOICE_COUNT];
+            for (bell, (midi, level)) in
+                bells.iter_mut().zip(&self.shared.bells).take(self.shared.bell_count.load(Ordering::SeqCst) as usize)
+            {
+                *bell =
+                    BellNote { midi: midi.load(Ordering::SeqCst), level: f32::from_bits(level.load(Ordering::SeqCst)) };
+            }
             let state = PlayerState {
+                bells,
                 status: PlaybackStatus::from_u8(self.shared.status.load(Ordering::SeqCst)),
                 timer_remaining_seconds: (timer_milliseconds != NO_TIMER).then(|| timer_milliseconds as f32 / 1000.0),
                 timer_expired: self.shared.timer_expired.load(Ordering::SeqCst),
@@ -172,6 +183,8 @@ pub fn create(sample_rate: f32) -> (Controller, Processor) {
         timer_remaining_milliseconds: AtomicU32::new(NO_TIMER),
         timer_expired: AtomicBool::new(false),
         level: AtomicU32::new(0f32.to_bits()),
+        bell_count: AtomicU8::new(0),
+        bells: std::array::from_fn(|_| (AtomicU8::new(0), AtomicU32::new(0))),
         volume: AtomicU32::new(1f32.to_bits()),
         applied_command: AtomicU32::new(0),
         snapshot_version: AtomicU32::new(0),
@@ -604,7 +617,27 @@ impl Processor {
         let timer_milliseconds = self.timer_samples_left.map_or(NO_TIMER, |samples| {
             ((samples as f64 / f64::from(self.sample_rate)) * 1000.0).min(f64::from(NO_TIMER - 1)) as u32
         });
+        let mut bells = [BellNote::default(); VOICE_COUNT];
+        let mut count = 0;
+        if self.is_audible()
+            && self.pending_scene.is_none()
+            && let Some(scene) = &self.current
+        {
+            let gain = self.volume.value()
+                * self.transport_gain
+                * self.transport_gain
+                * (self.crossfade_position * FRAC_PI_2).sin();
+            for note in scene.sounding_bells().take(VOICE_COUNT) {
+                bells[count] = BellNote { level: note.level * gain, ..note };
+                count += 1;
+            }
+        }
         self.shared.snapshot_version.fetch_add(1, Ordering::SeqCst);
+        self.shared.bell_count.store(count as u8, Ordering::SeqCst);
+        for (bell, (midi, level)) in bells[..count].iter().zip(&self.shared.bells) {
+            midi.store(bell.midi, Ordering::SeqCst);
+            level.store(bell.level.to_bits(), Ordering::SeqCst);
+        }
         self.shared.status.store(self.status as u8, Ordering::SeqCst);
         self.shared.timer_remaining_milliseconds.store(timer_milliseconds, Ordering::SeqCst);
         self.shared.timer_expired.store(self.timer_expired, Ordering::SeqCst);

@@ -89,7 +89,7 @@ SoundEngineState sound_engine_get_state(const SoundEngine *engine);
 /* Номер последней команды в очереди. Вызывается на управляющей стороне. */
 uint32_t sound_engine_queued_command(const SoundEngine *engine);
 
-/* Снимок в JSON с подтверждённой сценой и значениями ручек. Вызывается на управляющей стороне. */
+/* Снимок в JSON со сценой, ручками и звучащими колокольчиками (нота MIDI и уровень). Вызывается на управляющей стороне. */
 char *sound_engine_copy_snapshot(SoundEngine *engine);
 
 /* Освобождает строку, полученную через sound_engine_copy_snapshot. */

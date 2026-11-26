@@ -1,21 +1,9 @@
 const TAU = 2 * Math.PI;
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-
 export const POINT_COUNT = 120;
 
 export function getScenePoint(sceneId: string | null, index: number, progress: number) {
+    'worklet';
     const phase = TAU * progress;
-
-    if (sceneId === 'relax') {
-        const radius = Math.sqrt((index + 0.5) / POINT_COUNT);
-        const angle = index * GOLDEN_ANGLE;
-        const curl = angle + 0.36 * Math.sin(phase + radius * 5) + 0.24 * radius * Math.sin(phase * 2);
-        const distance = radius * (0.39 + 0.045 * Math.cos(angle * 3 - phase));
-        return {
-            x: Math.cos(curl) * distance,
-            y: Math.sin(curl) * distance,
-        };
-    }
 
     if (sceneId === 'sleep') {
         const band = Math.floor(index / 24) - 2;

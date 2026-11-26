@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::layers::{Layer, LayerFrame, MAX_CHORD_NOTES};
+use crate::layers::{BellNote, Layer, LayerFrame, MAX_CHORD_NOTES};
 use crate::music::Conductor;
 use crate::params::{ParamSet, ParamSpec, find_param};
 use crate::rng::Rng;
@@ -123,6 +123,18 @@ impl SceneRuntime {
             frame += layer.render(&self.harmony);
         }
         frame.scaled(self.params.get(GAIN))
+    }
+
+    pub fn sounding_bells(&self) -> impl Iterator<Item = BellNote> + '_ {
+        let gain = self.params.get(GAIN);
+        self.layers
+            .iter()
+            .filter_map(|layer| match layer {
+                Layer::Bells(bells) => Some(bells),
+                _ => None,
+            })
+            .flat_map(|bells| bells.sounding_notes())
+            .map(move |note| BellNote { level: note.level * gain, ..note })
     }
 
     pub fn reverb_settings(&self) -> ReverbSettings {

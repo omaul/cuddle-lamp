@@ -1,5 +1,4 @@
 import { StyleSheet } from 'react-native';
-import { colors } from '../../theme';
 
 export default StyleSheet.create({
     canvas: {
@@ -9,9 +8,30 @@ export default StyleSheet.create({
         bottom: 0,
         left: 0,
         overflow: 'hidden',
-        alignItems: 'center',
-        justifyContent: 'center',
     },
-    artwork: { position: 'relative', marginBottom: '18%' },
-    point: { position: 'absolute', borderRadius: 4, backgroundColor: colors.signal },
+    artwork: { position: 'absolute' },
+    point: { position: 'absolute', borderRadius: 4, backgroundColor: '#c2d6f7' },
+    ripple: {
+        position: 'absolute',
+        borderWidth: 1,
+        borderColor: '#ffc4a3',
+        borderLeftColor: '#c98e9888',
+        borderBottomColor: '#cd999266',
+    },
+    starHalo: {
+        width: '100%',
+        height: '100%',
+        backgroundImage: 'radial-gradient(circle, #cce1ff99 0%, #9dc6ff00 65%)',
+    },
+    starRay: {
+        position: 'absolute',
+        left: '43%',
+        top: '17%',
+        width: '14%',
+        height: '66%',
+        borderRadius: '50%',
+        backgroundColor: '#eef1ff',
+    },
+    starCrossRay: { transform: [{ rotate: '90deg' }, { scaleY: 0.8 }] },
+    starLink: { position: 'absolute', height: 1, backgroundColor: '#acbdde88' },
 });

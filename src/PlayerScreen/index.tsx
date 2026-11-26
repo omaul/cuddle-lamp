@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import Choice from '../components/Choice';
 import Knob from '../components/Knob';
-import SceneVisual from '../components/SceneVisual';
+import SceneVisual, { type SceneVisualInput } from '../components/SceneVisual';
 import type { Scene } from '../player/catalog';
 import type { PlayerSnapshot, PlayerStatus } from '../player/Player';
 import styles from './styles';
@@ -88,6 +88,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
             }
         });
     }, [sheetProgress]);
+    const visualInput = useRef<SceneVisualInput>(null);
+    const visualArea = useRef({ width: 0, height: 0 });
     const gripStartY = useRef(0);
     const resetSheetOffset = useCallback(() => {
         Animated.spring(sheetOffset, { toValue: 0, useNativeDriver: true }).start();
@@ -123,7 +125,14 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
 
     return (
         <View style={styles.screen}>
-            <SceneVisual key={sceneId} sceneId={snapshot.sceneId} isPlaying={isPlaying} rms={snapshot.rms} />
+            <SceneVisual
+                sceneId={snapshot.sceneId}
+                isPlaying={isPlaying}
+                rms={snapshot.rms}
+                bells={snapshot.bells}
+                space={snapshot.knobs.space ?? 0.5}
+                inputRef={visualInput}
+            />
             <Overlay style={styles.screen}>
                 <View style={styles.content}>
                     <View style={styles.topBar}>
@@ -168,7 +177,17 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                             <Text style={styles.gear}>{'⚙︎'}</Text>
                         </Pressable>
                     </View>
-                    <View pointerEvents="none" style={styles.visualSpace} />
+                    <View
+                        style={styles.visualSpace}
+                        pointerEvents={sceneId === 'sleep' || sceneId === 'relax' ? 'auto' : 'none'}
+                        onLayout={({ nativeEvent }) => {
+                            visualArea.current = nativeEvent.layout;
+                        }}
+                        onTouchStart={(event) => visualInput.current?.handleTouches(event, visualArea.current)}
+                        onTouchMove={(event) => visualInput.current?.handleTouches(event, visualArea.current)}
+                        onTouchEnd={(event) => visualInput.current?.handleTouchEnd(event)}
+                        onTouchCancel={(event) => visualInput.current?.handleTouchEnd(event)}
+                    />
                     <View style={styles.hero}>
                         <View style={styles.heroText}>
                             <Text accessibilityRole="header" style={styles.title}>

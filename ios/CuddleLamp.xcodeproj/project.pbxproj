@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		000000000000000000000009 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000006 /* AppDelegate.swift */; };
+		A03F0C010000000000000000 /* LampSceneComponentView.mm in Sources */ = {isa = PBXBuildFile; fileRef = A03F0C000000000000000000 /* LampSceneComponentView.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		A03F0C010000000000000001 /* SceneDrawing.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A03F0C000000000000000001 /* SceneDrawing.cpp */; };
+		A05F0C010000000000000001 /* FocusGallery.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A05F0C000000000000000001 /* FocusGallery.cpp */; };
 		E7876168DA3C8B8B8D9FF00E /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0FEB5161647A301DFAEC01A8 /* PrivacyInfo.xcprivacy */; };
 		FB5037632E1AE84AB7863989 /* libPods-CuddleLamp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = EB8212A7B4E87D6EC5E70F8C /* libPods-CuddleLamp.a */; };
 /* End PBXBuildFile section */
@@ -18,6 +21,11 @@
 		000000000000000000000008 /* CuddleLamp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = CuddleLamp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0FEB5161647A301DFAEC01A8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = ../PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		93D331DF29CDD068AF262FF8 /* Pods-CuddleLamp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CuddleLamp.debug.xcconfig"; path = "Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp.debug.xcconfig"; sourceTree = "<group>"; };
+		A03F0C000000000000000000 /* LampSceneComponentView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LampSceneComponentView.mm; sourceTree = "<group>"; };
+		A03F0C000000000000000001 /* SceneDrawing.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = SceneDrawing.cpp; sourceTree = "<group>"; };
+		A05F0C000000000000000001 /* FocusGallery.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = FocusGallery.cpp; sourceTree = "<group>"; };
+		A03F0C000000000000000002 /* SceneDrawing.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDrawing.h; sourceTree = "<group>"; };
+		A05F0C000000000000000002 /* FocusGallery.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FocusGallery.h; sourceTree = "<group>"; };
 		DA69C34E400A888F597ED081 /* Pods-CuddleLamp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CuddleLamp.release.xcconfig"; path = "Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp.release.xcconfig"; sourceTree = "<group>"; };
 		EB8212A7B4E87D6EC5E70F8C /* libPods-CuddleLamp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-CuddleLamp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -48,6 +56,11 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000006 /* AppDelegate.swift */,
+				A03F0C000000000000000002 /* SceneDrawing.h */,
+				A05F0C000000000000000002 /* FocusGallery.h */,
+				A03F0C000000000000000001 /* SceneDrawing.cpp */,
+				A05F0C000000000000000001 /* FocusGallery.cpp */,
+				A03F0C000000000000000000 /* LampSceneComponentView.mm */,
 				000000000000000000000007 /* Info.plist */,
 				0FEB5161647A301DFAEC01A8 /* PrivacyInfo.xcprivacy */,
 			);
@@ -211,6 +224,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				000000000000000000000009 /* AppDelegate.swift in Sources */,
+				A03F0C010000000000000001 /* SceneDrawing.cpp in Sources */,
+				A05F0C010000000000000001 /* FocusGallery.cpp in Sources */,
+				A03F0C010000000000000000 /* LampSceneComponentView.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

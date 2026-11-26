@@ -12,6 +12,7 @@ use crate::rng::Rng;
 use crate::scene::{Harmony, LayerSpec, SceneError};
 
 use self::bells::BellsLayer;
+pub use self::bells::{BellNote, VOICE_COUNT};
 use self::noise::NoiseLayer;
 use self::pad::PadLayer;
 

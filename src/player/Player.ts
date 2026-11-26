@@ -2,6 +2,11 @@ import type { Scene } from './catalog';
 
 export type PlayerStatus = 'loading' | 'paused' | 'playing' | 'fading' | 'error';
 
+export interface BellNote {
+    midi: number;
+    level: number;
+}
+
 export interface PlayerSnapshot {
     status: PlayerStatus;
     sceneId: string | null;
@@ -10,6 +15,7 @@ export interface PlayerSnapshot {
     knobs: Readonly<Record<string, number>>;
     remainingSeconds: number | null;
     rms: number;
+    bells?: readonly BellNote[];
     error?: string;
 }
 

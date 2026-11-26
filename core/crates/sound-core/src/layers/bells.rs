@@ -28,7 +28,14 @@ const DOUBLE_CHANCE: usize = 6;
 const OVERTONE: usize = 7;
 const REVERB_SEND: usize = 8;
 
-const VOICE_COUNT: usize = 24;
+pub const VOICE_COUNT: usize = 24;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize)]
+pub struct BellNote {
+    pub midi: u8,
+    /// Текущий уровень звучащей ноты с учётом огибающей и громкости.
+    pub level: f32,
+}
 const FIRST_STRIKE_SECONDS: f32 = 1.2;
 const SECOND_STRIKE_SECONDS: [f32; 2] = [0.25, 0.7];
 const VELOCITY_RANGE: [f32; 2] = [0.5, 1.0];
@@ -55,6 +62,7 @@ pub struct BellsLayer {
 #[derive(Clone, Copy, Default)]
 struct BellVoice {
     is_active: bool,
+    midi: u8,
     phase: Phase,
     overtone_phase: Phase,
     increment: f32,
@@ -101,6 +109,14 @@ impl BellsLayer {
         LayerFrame::with_send(left * level, right * level, self.params.get(REVERB_SEND))
     }
 
+    pub fn sounding_notes(&self) -> impl Iterator<Item = BellNote> + '_ {
+        let level = self.params.get(LEVEL);
+        self.voices
+            .iter()
+            .filter(|voice| voice.is_active)
+            .map(move |voice| BellNote { midi: voice.midi, level: voice.envelope * level })
+    }
+
     fn advance_schedule(&mut self, harmony: &Harmony) {
         if self.samples_until_strike == 0 {
             self.strike(harmony);
@@ -128,7 +144,8 @@ impl BellsLayer {
     fn strike(&mut self, harmony: &Harmony) {
         let degree = harmony.scale[self.rng.index(harmony.scale.len())];
         let octave = self.octaves[self.rng.index(self.octaves.len())];
-        let frequency = midi_to_hz((i64::from(harmony.root) + i64::from(degree) + i64::from(octave)) as f32);
+        let midi = (i64::from(harmony.root) + i64::from(degree) + i64::from(octave)) as u8;
+        let frequency = midi_to_hz(f32::from(midi));
         let (min_release, max_release) = ordered(self.params.get(RELEASE_MIN), self.params.get(RELEASE_MAX));
         let duration = self.rng.range(min_release, max_release);
         let [min_velocity, max_velocity] = VELOCITY_RANGE;
@@ -147,6 +164,7 @@ impl BellsLayer {
         let voice_index = self.find_free_voice();
         self.voices[voice_index] = BellVoice {
             is_active: true,
+            midi,
             phase: Phase::default(),
             overtone_phase: Phase::default(),
             increment: frequency / self.sample_rate,

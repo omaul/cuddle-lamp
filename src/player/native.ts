@@ -7,6 +7,7 @@ interface EngineSnapshot {
     status: 0 | 1 | 2 | 3;
     remainingSeconds: number | null;
     rms: number;
+    bells?: PlayerSnapshot['bells'];
     appliedCommand: number;
     scene: { sceneId: string; name: string; knobLabels?: PlayerSnapshot['knobLabels']; knobs: Record<string, number> } | null;
 }
@@ -58,6 +59,7 @@ export function createNativePlayer(module: Spec, initialScene: Scene): Player {
             knobs: engine.scene?.knobs ?? {},
             remainingSeconds: engine.remainingSeconds === null ? null : Math.ceil(engine.remainingSeconds),
             rms: engine.rms,
+            bells: engine.bells,
             error: initialSceneError,
         });
         return engine;

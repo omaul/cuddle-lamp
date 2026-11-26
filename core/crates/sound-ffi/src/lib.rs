@@ -259,6 +259,7 @@ pub unsafe extern "C" fn sound_engine_copy_snapshot(engine: *mut SoundEngine) ->
         "remainingSeconds": state.timer_remaining_seconds,
         "timerExpired": state.timer_expired,
         "rms": state.level,
+        "bells": state.bells.iter().filter(|note| note.level > 0.0).collect::<Vec<_>>(),
         "appliedCommand": state.applied_command,
         "scene": scene,
     });

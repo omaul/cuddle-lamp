@@ -7,6 +7,7 @@ interface NativeProps extends ViewProps {
     rms: CodegenTypes.Float;
     space: CodegenTypes.Float;
     localMinute: CodegenTypes.Int32;
+    frequencyHz: CodegenTypes.Float;
     bells: ReadonlyArray<Readonly<{ midi: CodegenTypes.Int32; level: CodegenTypes.Float }>>;
 }
 

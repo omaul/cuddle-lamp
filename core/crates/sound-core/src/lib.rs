@@ -17,4 +17,6 @@ pub use engine::{
     SCENE_CROSSFADE_SECONDS, SceneState, StateReader, TIMER_FADE_SECONDS, create,
 };
 pub use layers::BellNote;
-pub use scene::{BellsSpec, Curve, Harmony, KnobSpec, KnobTarget, LayerSpec, Scene, SceneError, SimpleLayerSpec};
+pub use scene::{
+    BellsSpec, Curve, Harmony, KnobChoices, KnobSpec, KnobTarget, LayerSpec, Scene, SceneError, SimpleLayerSpec,
+};

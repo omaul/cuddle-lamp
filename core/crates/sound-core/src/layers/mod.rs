@@ -4,6 +4,7 @@
 mod bells;
 mod noise;
 mod pad;
+mod tone;
 
 use std::ops::AddAssign;
 
@@ -15,6 +16,7 @@ use self::bells::BellsLayer;
 pub use self::bells::{BellNote, VOICE_COUNT};
 use self::noise::NoiseLayer;
 use self::pad::PadLayer;
+use self::tone::ToneLayer;
 
 pub use self::pad::MAX_CHORD_NOTES;
 
@@ -63,6 +65,7 @@ pub enum Layer {
     Pad(PadLayer),
     Noise(NoiseLayer),
     Bells(BellsLayer),
+    Tone(ToneLayer),
 }
 
 impl Layer {
@@ -72,6 +75,7 @@ impl Layer {
             LayerSpec::Pad(_) => pad::PARAMS,
             LayerSpec::Noise(_) => noise::PARAMS,
             LayerSpec::Bells(_) => bells::PARAMS,
+            LayerSpec::Tone(_) => tone::PARAMS,
         }
     }
 
@@ -82,6 +86,7 @@ impl Layer {
         let layer = match spec {
             LayerSpec::Pad(_) => Self::Pad(PadLayer::new(params, rng, sample_rate)),
             LayerSpec::Noise(_) => Self::Noise(NoiseLayer::new(params, rng, sample_rate)),
+            LayerSpec::Tone(_) => Self::Tone(ToneLayer::new(params, sample_rate)),
             LayerSpec::Bells(bells_spec) => {
                 if bells_spec.octaves.is_empty() {
                     return Err(SceneError::invalid(format!("{owner}: список octaves пуст")));
@@ -97,6 +102,7 @@ impl Layer {
             Self::Pad(layer) => &mut layer.params,
             Self::Noise(layer) => &mut layer.params,
             Self::Bells(layer) => &mut layer.params,
+            Self::Tone(layer) => &mut layer.params,
         }
     }
 
@@ -113,6 +119,7 @@ impl Layer {
             Self::Pad(layer) => layer.render(),
             Self::Noise(layer) => layer.render(),
             Self::Bells(layer) => layer.render(harmony),
+            Self::Tone(layer) => layer.render(),
         }
     }
 }

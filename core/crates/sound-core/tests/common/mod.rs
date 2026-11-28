@@ -18,7 +18,8 @@ pub const TEST_SCENE: &str = r#"{
     "layers": [
         { "type": "pad", "id": "pad", "params": { "attack": 0.5, "release": 1 } },
         { "type": "noise", "id": "noise", "params": { "waveDepth": 0.03 } },
-        { "type": "bells", "id": "bells", "octaves": [12, 24], "params": { "gapMin": 0.3, "gapMax": 0.8 } }
+        { "type": "bells", "id": "bells", "octaves": [12, 24], "params": { "gapMin": 0.3, "gapMax": 0.8 } },
+        { "type": "tone", "id": "tone", "params": { "level": 0 } }
     ],
     "knobs": [
         {

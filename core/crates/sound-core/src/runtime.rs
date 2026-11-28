@@ -4,7 +4,7 @@ use crate::layers::{BellNote, Layer, LayerFrame, MAX_CHORD_NOTES};
 use crate::music::Conductor;
 use crate::params::{ParamSet, ParamSpec, find_param};
 use crate::rng::Rng;
-use crate::scene::{Curve, Harmony, LayerSpec, Scene, SceneError};
+use crate::scene::{Curve, Harmony, LayerSpec, Scene, SceneError, choice_index};
 
 /// Параметры сцены целиком. В ручках адресуются как «scene.параметр».
 pub const SCENE_PARAMS: &[ParamSpec] = &[
@@ -39,9 +39,21 @@ enum ParamOwner {
 struct KnobTargetBinding {
     owner: ParamOwner,
     param_index: usize,
-    from: f32,
-    to: f32,
-    curve: Curve,
+    mapping: KnobMapping,
+}
+
+enum KnobMapping {
+    Range { from: f32, to: f32, curve: Curve },
+    Choices(Vec<f32>),
+}
+
+impl KnobMapping {
+    fn value(&self, position: f32) -> f32 {
+        match self {
+            Self::Range { from, to, curve } => curve.interpolate(*from, *to, position),
+            Self::Choices(values) => values[choice_index(position, values.len())],
+        }
+    }
 }
 
 /// Загруженная сцена, готовая к синтезу. Создаётся вне аудиопотока, в аудиопотоке только играет.
@@ -77,9 +89,13 @@ impl SceneRuntime {
         let knobs = bind_knobs(scene)?;
 
         for (bindings, knob) in knobs.iter().zip(&scene.knobs) {
-            let position = initial_knobs.get(&knob.id).copied().unwrap_or(knob.default);
+            let position = initial_knobs
+                .get(&knob.id)
+                .copied()
+                .filter(|value| (0.0..=1.0).contains(value))
+                .unwrap_or(knob.default);
             for binding in bindings {
-                let value = binding.curve.interpolate(binding.from, binding.to, position);
+                let value = binding.mapping.value(position);
                 owner_params(&mut params, &mut layers, binding.owner).set_immediate(binding.param_index, value);
             }
         }
@@ -97,7 +113,7 @@ impl SceneRuntime {
     }
 
     /// Ставит ручку `index` в положение `position` от 0 до 1. Неизвестный индекс игнорируется.
-    pub fn set_knob(&mut self, index: usize, position: f32) {
+    pub fn set_knob(&mut self, index: usize, position: f32, is_silent: bool) {
         if !position.is_finite() {
             return;
         }
@@ -107,14 +123,29 @@ impl SceneRuntime {
             return;
         };
         for binding in bindings {
-            let value = binding.curve.interpolate(binding.from, binding.to, position);
-            owner_params(params, layers, binding.owner).set_target(binding.param_index, value);
+            let value = binding.mapping.value(position);
+            let params = owner_params(params, layers, binding.owner);
+            if is_silent && matches!(&binding.mapping, KnobMapping::Choices(_)) {
+                params.set_immediate(binding.param_index, value);
+            } else {
+                params.set_target(binding.param_index, value);
+            }
         }
     }
 
-    pub fn reset_knobs(&mut self) {
+    pub fn reset_knobs(&mut self, is_silent: bool) {
         for index in 0..self.knob_defaults.len() {
-            self.set_knob(index, self.knob_defaults[index]);
+            self.set_knob(index, self.knob_defaults[index], is_silent);
+        }
+    }
+
+    /// Завершает перестройку пресетов, выбранных перед окончанием затухания.
+    pub fn finish_choice_transitions(&mut self) {
+        let Self { knobs, params, layers, .. } = self;
+        for binding in knobs.iter().flatten() {
+            if matches!(&binding.mapping, KnobMapping::Choices(_)) {
+                owner_params(params, layers, binding.owner).finish(binding.param_index);
+            }
         }
     }
 
@@ -198,7 +229,7 @@ fn validate_notes(scene: &Scene) -> Result<(), SceneError> {
             LayerSpec::Bells(bells) => harmony.scale.iter().all(|degree| {
                 bells.octaves.iter().all(|octave| is_midi_note(root + i64::from(*degree) + i64::from(*octave)))
             }),
-            LayerSpec::Noise(_) => true,
+            LayerSpec::Noise(_) | LayerSpec::Tone(_) => true,
         };
         if !valid {
             return Err(SceneError::invalid(format!(
@@ -243,16 +274,32 @@ fn bind_knobs(scene: &Scene) -> Result<Vec<Vec<KnobTargetBinding>>, SceneError> 
         if !(0.0..=1.0).contains(&knob.default) {
             return Err(SceneError::invalid(format!("{owner_name}: положение по умолчанию должно быть от 0 до 1")));
         }
-        if knob.targets.is_empty() {
-            return Err(SceneError::invalid(format!("{owner_name}: не управляет ни одним параметром")));
+        match &knob.choices {
+            Some(_) if !knob.targets.is_empty() => {
+                return Err(SceneError::invalid(format!("{owner_name}: укажите либо targets, либо choices")));
+            }
+            None if knob.targets.is_empty() => {
+                return Err(SceneError::invalid(format!("{owner_name}: не управляет ни одним параметром")));
+            }
+            _ => {}
         }
 
-        let mut bindings = Vec::with_capacity(knob.targets.len());
-        for target in &knob.targets {
-            let Some((target_owner, param_name)) = target.param.split_once('.') else {
+        let mappings = knob
+            .targets
+            .iter()
+            .map(|target| {
+                (target.param.as_str(), KnobMapping::Range { from: target.from, to: target.to, curve: target.curve })
+            })
+            .chain(
+                knob.choices
+                    .iter()
+                    .map(|choices| (choices.param.as_str(), KnobMapping::Choices(choices.values.clone()))),
+            );
+        let mut bindings = Vec::new();
+        for (param, mapping) in mappings {
+            let Some((target_owner, param_name)) = param.split_once('.') else {
                 return Err(SceneError::invalid(format!(
-                    "{owner_name}: адрес «{}» должен выглядеть как «слой.параметр»",
-                    target.param
+                    "{owner_name}: адрес «{param}» должен выглядеть как «слой.параметр»"
                 )));
             };
             let (owner, specs, explicit_params) = if target_owner == SCENE_OWNER {
@@ -271,29 +318,37 @@ fn bind_knobs(scene: &Scene) -> Result<Vec<Vec<KnobTargetBinding>>, SceneError> 
             };
             if explicit_params.contains_key(param_name) {
                 return Err(SceneError::invalid(format!(
-                    "параметр «{}» задаёт ручка «{}», уберите его значение из параметров «{target_owner}»",
-                    target.param, knob.id
+                    "параметр «{param}» задаёт ручка «{}», уберите его значение из параметров «{target_owner}»",
+                    knob.id
                 )));
             }
             if !controlled_params.insert((owner, param_index)) {
-                return Err(SceneError::invalid(format!("параметром «{}» управляют несколько ручек", target.param)));
+                return Err(SceneError::invalid(format!("параметром «{param}» управляют несколько ручек")));
             }
             let spec = &specs[param_index];
-            spec.check(target.from, &owner_name)?;
-            spec.check(target.to, &owner_name)?;
-            if target.curve == Curve::Exponential && (target.from <= 0.0 || target.to <= 0.0) {
-                return Err(SceneError::invalid(format!(
-                    "{owner_name}: для экспоненциальной кривой у «{}» нужны положительные from и to",
-                    target.param
-                )));
+            match &mapping {
+                KnobMapping::Range { from, to, curve } => {
+                    spec.check(*from, &owner_name)?;
+                    spec.check(*to, &owner_name)?;
+                    if *curve == Curve::Exponential && (*from <= 0.0 || *to <= 0.0) {
+                        return Err(SceneError::invalid(format!(
+                            "{owner_name}: для экспоненциальной кривой у «{param}» нужны положительные from и to"
+                        )));
+                    }
+                }
+                KnobMapping::Choices(values) => {
+                    let mut seen = HashSet::new();
+                    if values.len() < 2 || !values.iter().all(|value| seen.insert((value + 0.0).to_bits())) {
+                        return Err(SceneError::invalid(format!(
+                            "{owner_name}: в choices.values нужны хотя бы два разных значения без повторений"
+                        )));
+                    }
+                    for &value in values {
+                        spec.check(value, &owner_name)?;
+                    }
+                }
             }
-            bindings.push(KnobTargetBinding {
-                owner,
-                param_index,
-                from: target.from,
-                to: target.to,
-                curve: target.curve,
-            });
+            bindings.push(KnobTargetBinding { owner, param_index, mapping });
         }
         knobs.push(bindings);
     }

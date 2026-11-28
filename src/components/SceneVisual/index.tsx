@@ -15,6 +15,7 @@ interface SceneVisualProps {
     isPlaying: boolean;
     rms: number;
     bells?: readonly BellNote[];
+    frequencyHz?: number;
     space: number;
     inputRef: React.Ref<SceneVisualInput>;
 }
@@ -32,7 +33,7 @@ export interface SceneImpulse {
     strength: number;
 }
 
-const SceneVisual: React.FC<SceneVisualProps> = ({ sceneId, isPlaying, rms, bells, space, inputRef }) => {
+const SceneVisual: React.FC<SceneVisualProps> = ({ sceneId, isPlaying, rms, bells, frequencyHz, space, inputRef }) => {
     const [size, setSize] = useState({ width: 0, height: 0 });
     const [isForeground, setIsForeground] = useState(
         AppState.currentState === 'active' || AppState.currentState === null,
@@ -91,7 +92,7 @@ const SceneVisual: React.FC<SceneVisualProps> = ({ sceneId, isPlaying, rms, bell
             {sceneId !== null && (sceneId !== 'focus' || Platform.OS === 'ios') && size.width > 0 && size.height > 0 && (
                 <SceneArtwork
                     {...size}
-                    {...{ sceneId, isPlaying, rms, bells, space, localMinute }}
+                    {...{ sceneId, isPlaying, rms, bells, frequencyHz, space, localMinute }}
                     isMotionAllowed={isForeground && isMotionAllowed}
                 />
             )}

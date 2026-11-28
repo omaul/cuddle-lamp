@@ -87,6 +87,10 @@ impl ParamSet {
         self.values[index].set_immediate(value.clamp(spec.min, spec.max));
     }
 
+    pub fn finish(&mut self, index: usize) {
+        self.values[index].finish();
+    }
+
     /// Сдвигает все параметры на один отсчёт к целевым значениям.
     #[inline]
     pub fn tick(&mut self) {

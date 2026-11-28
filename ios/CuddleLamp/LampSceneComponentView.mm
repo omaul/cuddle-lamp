@@ -4,6 +4,7 @@
 
 #import "SceneDrawing.h"
 #import "FocusGallery.h"
+#import "ToneGrains.h"
 
 #include <algorithm>
 #include <cmath>
@@ -24,6 +25,8 @@ using namespace facebook::react;
     CFTimeInterval _lastFrame;
     double _phase, _energy, _targetEnergy, _space;
     BOOL _playing, _motionAllowed, _configured;
+    BOOL _isToneScene;
+    lamp::toneGrains::Surface _toneSurface;
     UITouch *_dragTouch;
     CGPoint _dragStart;
     lamp::RelaxDrag _relaxDrag;
@@ -68,7 +71,8 @@ using namespace facebook::react;
 
 - (void)updateClock {
     BOOL dragging = [self hasDragMotion];
-    if (!self.window || !_motionAllowed || (!_playing && !dragging)) {
+    BOOL animating = _isToneScene ? _toneSurface.isAnimating() : (_playing || dragging);
+    if (!self.window || !_motionAllowed || !animating) {
         [_clock invalidate];
         _clock = nil;
         _lastFrame = 0;
@@ -78,9 +82,10 @@ using namespace facebook::react;
         _clock = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
         [_clock addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     }
-    float rate = dragging ? 60 : 30;
+    BOOL fast = dragging || (_isToneScene && _toneSurface.isRetuning());
+    float rate = fast ? 60 : 30;
     if (_clock.preferredFrameRateRange.preferred != rate) {
-        _clock.preferredFrameRateRange = CAFrameRateRangeMake(dragging ? 30 : 20, rate, rate);
+        _clock.preferredFrameRateRange = CAFrameRateRangeMake(fast ? 30 : 20, rate, rate);
     }
 }
 
@@ -168,7 +173,8 @@ using namespace facebook::react;
 - (void)applyProps:(const LampSceneViewProps &)props {
     lamp::Scene scene = props.scene == "sleep" ? lamp::Scene::sleep : lamp::Scene::relax;
     if (props.scene == "focus") scene = lamp::Scene::gallery;
-    BOOL changed = scene != _scene;
+    BOOL isToneScene = props.scene == "solfeggio";
+    BOOL changed = scene != _scene || isToneScene != _isToneScene;
     BOOL lightingChanged = scene == lamp::Scene::gallery && props.localMinute != _localMinute;
     if (changed || lightingChanged) [self clearGalleryBackdrop];
     _localMinute = props.localMinute;
@@ -187,7 +193,10 @@ using namespace facebook::react;
     _space = space;
     _playing = props.playing;
     _motionAllowed = props.motionAllowed;
-    self.userInteractionEnabled = scene == lamp::Scene::relax && _motionAllowed;
+    _isToneScene = isToneScene;
+    redraw |= _toneSurface.setFrequency(isToneScene ? props.frequencyHz : 0,
+                                       _motionAllowed && !changed && self.window != nil);
+    self.userInteractionEnabled = !isToneScene && scene == lamp::Scene::relax && _motionAllowed;
     if (changed || !self.userInteractionEnabled) {
         redraw |= _relaxDrag.offset.dx != 0 || _relaxDrag.offset.dy != 0 || _relaxDrag.hasVisibleTears();
         [self clearDrag];
@@ -207,6 +216,7 @@ using namespace facebook::react;
         _glints.fill(0);
     }
     const double rms = std::max<double>(0.0, props.rms);
+    redraw |= _toneSurface.setSoundLevel(_playing ? rms : 0, isToneScene && _motionAllowed);
     _targetEnergy = _playing && _motionAllowed ? std::min(1.0, std::sqrt(3.0 * rms)) : 0;
     if (!_playing || !_motionAllowed) {
         redraw |= _energy != 0;
@@ -219,6 +229,12 @@ using namespace facebook::react;
 - (void)tick:(CADisplayLink *)clock {
     double elapsed = _lastFrame ? std::min(clock.timestamp - _lastFrame, 0.08) : 0;
     _lastFrame = clock.timestamp;
+    if (_isToneScene) {
+        _toneSurface.advance(elapsed);
+        [self setNeedsDisplay];
+        [self updateClock];
+        return;
+    }
     double response = _scene == lamp::Scene::gallery ? 2.0 : (_targetEnergy > _energy ? 0.65 : 1.6);
     _energy += (_targetEnergy - _energy) * -std::expm1(-elapsed / response);
     if (_targetEnergy == 0 && _energy < 0.0001) _energy = 0;
@@ -244,7 +260,9 @@ using namespace facebook::react;
 - (void)drawRect:(CGRect)rect {
     CGContextRef context = UIGraphicsGetCurrentContext();
     if (!context || CGRectIsEmpty(self.bounds)) return;
-    if (_scene == lamp::Scene::gallery) {
+    if (_isToneScene) {
+        _toneSurface.draw(context, self.bounds.size);
+    } else if (_scene == lamp::Scene::gallery) {
         CGSize size = self.bounds.size;
         if (!_galleryBackdrop || !CGSizeEqualToSize(CGLayerGetSize(_galleryBackdrop), size)
             || _backdropScale != self.contentScaleFactor) {

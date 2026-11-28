@@ -1,4 +1,4 @@
-import { scenes, type Scene } from './catalog';
+import { scenes, snapKnobPosition, type Scene } from './catalog';
 
 interface PreferencesStorage {
     read(): unknown;
@@ -19,7 +19,9 @@ export function createPlayerPreferences(storage?: PreferencesStorage) {
                 const savedKnobs = saved?.knobValuesBySceneId?.[scene.id];
                 const entries = (scene.knobs ?? []).flatMap(knob => {
                     const value = savedKnobs?.[knob.id];
-                    return typeof value === 'number' && value >= 0 && value <= 1 ? [[knob.id, value] as const] : [];
+                    return typeof value === 'number' && value >= 0 && value <= 1
+                        ? [[knob.id, snapKnobPosition(value, knob.choices)] as const]
+                        : [];
                 });
                 if (entries.length > 0) {
                     knobValuesBySceneId.set(scene.id, Object.fromEntries(entries));

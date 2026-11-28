@@ -1,4 +1,4 @@
-import type { Scene } from './catalog';
+import type { KnobLabel, Scene } from './catalog';
 
 export type PlayerStatus = 'loading' | 'paused' | 'playing' | 'fading' | 'error';
 
@@ -11,7 +11,7 @@ export interface PlayerSnapshot {
     status: PlayerStatus;
     sceneId: string | null;
     sceneName?: string;
-    knobLabels?: readonly { id: string; name: string }[];
+    knobLabels?: readonly KnobLabel[];
     knobs: Readonly<Record<string, number>>;
     remainingSeconds: number | null;
     rms: number;

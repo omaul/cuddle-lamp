@@ -19,12 +19,12 @@
 		000000000000000000000006 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		000000000000000000000007 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		000000000000000000000008 /* CuddleLamp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = CuddleLamp.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		0FEB5161647A301DFAEC01A8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = ../PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0FEB5161647A301DFAEC01A8 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = ../PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		93D331DF29CDD068AF262FF8 /* Pods-CuddleLamp.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CuddleLamp.debug.xcconfig"; path = "Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp.debug.xcconfig"; sourceTree = "<group>"; };
 		A03F0C000000000000000000 /* LampSceneComponentView.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = LampSceneComponentView.mm; sourceTree = "<group>"; };
 		A03F0C000000000000000001 /* SceneDrawing.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = SceneDrawing.cpp; sourceTree = "<group>"; };
-		A05F0C000000000000000001 /* FocusGallery.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = FocusGallery.cpp; sourceTree = "<group>"; };
 		A03F0C000000000000000002 /* SceneDrawing.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SceneDrawing.h; sourceTree = "<group>"; };
+		A05F0C000000000000000001 /* FocusGallery.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = FocusGallery.cpp; sourceTree = "<group>"; };
 		A05F0C000000000000000002 /* FocusGallery.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FocusGallery.h; sourceTree = "<group>"; };
 		DA69C34E400A888F597ED081 /* Pods-CuddleLamp.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-CuddleLamp.release.xcconfig"; path = "Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp.release.xcconfig"; sourceTree = "<group>"; };
 		EB8212A7B4E87D6EC5E70F8C /* libPods-CuddleLamp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-CuddleLamp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -89,7 +89,6 @@
 				93D331DF29CDD068AF262FF8 /* Pods-CuddleLamp.debug.xcconfig */,
 				DA69C34E400A888F597ED081 /* Pods-CuddleLamp.release.xcconfig */,
 			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -122,9 +121,12 @@
 /* Begin PBXProject section */
 		000000000000000000000001 /* Project object */ = {
 			isa = PBXProject;
+			attributes = {
+			};
 			buildConfigurationList = 00000000000000000000000B /* Build configuration list for PBXProject "CuddleLamp" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = ru;
+			hasScannedForEncodings = 0;
 			knownRegions = (
 				ru,
 				Base,
@@ -132,6 +134,7 @@
 			mainGroup = 000000000000000000000003;
 			productRefGroup = 000000000000000000000005 /* Products */;
 			projectDirPath = "";
+			projectRoot = "";
 			targets = (
 				000000000000000000000002 /* CuddleLamp */,
 			);
@@ -155,7 +158,11 @@
 			buildActionMask = 2147483647;
 			files = (
 			);
+			inputPaths = (
+			);
 			name = "Bundle React Native code and images";
+			outputPaths = (
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "set -e\nRN_SCRIPTS=\"$PROJECT_DIR/../node_modules/react-native/scripts\"\n/bin/sh \"$RN_SCRIPTS/xcode/with-environment.sh\" \"$RN_SCRIPTS/react-native-xcode.sh\"\n";
@@ -168,9 +175,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -185,9 +196,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-CuddleLamp/Pods-CuddleLamp-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -284,6 +299,7 @@
 			baseConfigurationReference = 93D331DF29CDD068AF262FF8 /* Pods-CuddleLamp.debug.xcconfig */;
 			buildSettings = {
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H3U35L96WY;
 				INFOPLIST_FILE = CuddleLamp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -308,6 +324,7 @@
 			baseConfigurationReference = DA69C34E400A888F597ED081 /* Pods-CuddleLamp.release.xcconfig */;
 			buildSettings = {
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = H3U35L96WY;
 				INFOPLIST_FILE = CuddleLamp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

@@ -6,13 +6,22 @@ import workletUrl from './worklet.ts?worker&url';
 import focus from '../scenes/focus.json?raw';
 import relax from '../scenes/relax.json?raw';
 import sleep from '../scenes/sleep.json?raw';
+import solfeggio from '../scenes/solfeggio.json?raw';
+
+type Knob = {
+    id: string;
+    name: string;
+    default?: number;
+    targets?: { param: string; from: number; to: number; curve?: 'linear' | 'exponential' }[];
+    choices?: { param: string; values: number[]; unit: string };
+};
 
 type Scene = {
     id: string;
     name: string;
     seed?: number;
-    layers: { id: string; type: 'pad' | 'noise' | 'bells'; params?: Record<string, number> }[];
-    knobs?: { id: string; name: string; default?: number; targets: { param: string; from: number; to: number; curve?: 'linear' | 'exponential' }[] }[];
+    layers: { id: string; type: 'pad' | 'noise' | 'bells' | 'tone'; params?: Record<string, number> }[];
+    knobs?: Knob[];
 };
 
 type ActiveScene = {
@@ -32,6 +41,7 @@ const layerSettings = {
     pad: { name: 'Пэд', description: 'Протяжные аккорды и гармонический фон.', level: 0.12 },
     noise: { name: 'Шум', description: 'Непрерывная шуршащая текстура.', level: 0.05 },
     bells: { name: 'Колокольчики', description: 'Отдельные звенящие ноты.', level: 0.07 },
+    tone: { name: 'Тон', description: 'Синусоида заданной частоты.', level: 0.12 },
 };
 const knobDescriptions: Record<string, string> = {
     brightness: 'Больше высоких частот в пэде и шуме.',
@@ -49,7 +59,7 @@ const parameterLabels: Record<string, [string, string]> = {
 };
 const formatParameter = new Intl.NumberFormat('ru', { maximumSignificantDigits: 4 });
 const referenceKnobs = (JSON.parse(focus) as Scene).knobs;
-const presets = new Map(Object.entries({ focus, relax, sleep }));
+const presets = new Map(Object.entries({ focus, relax, sleep, solfeggio }));
 
 export function getElement<T extends HTMLElement = HTMLElement>(id: string): T {
     const element = document.getElementById(id);
@@ -149,6 +159,13 @@ function hasUnsafeSeed(scene: Scene | undefined) {
     return scene?.seed !== undefined && !Number.isSafeInteger(scene.seed);
 }
 
+function setKnobPosition(current: ActiveScene, id: string, position: number) {
+    current.positions.set(id, position);
+    audio?.send('knob', encoder.encode(id), position).then(markAudibleChange).catch((error) => {
+        report(audioStatus, errorText(error), true);
+    });
+}
+
 function updateKnobs(current: ActiveScene) {
     knobs.replaceChildren();
     if (!current.scene.knobs?.length) {
@@ -160,25 +177,43 @@ function updateKnobs(current: ActiveScene) {
     for (const knob of current.scene.knobs) {
         const section = document.createElement('div');
         section.className = 'knob';
+        const inputId = `knob-${knobs.childElementCount}`;
+        const label = document.createElement('label');
+        label.htmlFor = inputId;
+        label.textContent = knob.name;
+        const position = current.positions.get(knob.id) ?? knob.default ?? 0.5;
+        if (knob.choices) {
+            const { values, unit } = knob.choices;
+            const lastIndex = values.length - 1;
+            const select = document.createElement('select');
+            select.id = inputId;
+            select.append(...values.map((value) => {
+                const text = [formatParameter.format(value), unit].filter(Boolean).join(' ');
+                return new Option(text);
+            }));
+            select.selectedIndex = Math.round(position * lastIndex);
+            select.addEventListener('change', () => setKnobPosition(current, knob.id, select.selectedIndex / lastIndex));
+            section.append(label, select);
+            knobs.append(section);
+            continue;
+        }
+        const knobTargets = knob.targets ?? [];
         const heading = document.createElement('div');
         heading.className = 'reading';
-        const label = document.createElement('label');
         const slider = document.createElement('input');
-        slider.id = `knob-${knobs.childElementCount}`;
+        slider.id = inputId;
         slider.type = 'range';
         slider.min = '0';
         slider.max = '1';
         slider.step = '0.001';
-        slider.value = String(current.positions.get(knob.id) ?? knob.default ?? 0.5);
-        label.htmlFor = slider.id;
-        label.textContent = knob.name;
+        slider.value = String(position);
         const reading = document.createElement('output');
         reading.htmlFor.add(slider.id);
         const targets = document.createElement('details');
         const summary = document.createElement('summary');
         summary.textContent = 'Затронутые параметры';
         const parameters = document.createElement('code');
-        parameters.textContent = knob.targets.map(({ param }) => param).join(' · ');
+        parameters.textContent = knobTargets.map(({ param }) => param).join(' · ');
         targets.append(summary, parameters);
         const description = document.createElement('p');
         const knownDescription = hasKnownKnobTargets(knob)
@@ -187,7 +222,7 @@ function updateKnobs(current: ActiveScene) {
         description.textContent = knownDescription ?? 'Меняет параметры, связанные с этой ручкой в JSON.';
         const values = document.createElement('dl');
         values.className = 'parameter-values';
-        const parameterValues = knob.targets.map((target) => {
+        const parameterValues = knobTargets.map((target) => {
             const [name, unit] = parameterLabels[target.param] ?? [target.param, ''];
             const entry = document.createElement('div');
             const term = document.createElement('dt');
@@ -211,10 +246,7 @@ function updateKnobs(current: ActiveScene) {
                 drawParameterCurve(plot, target, value);
             }
             if (!send) return;
-            current.positions.set(knob.id, value);
-            audio?.send('knob', encoder.encode(knob.id), value).then(markAudibleChange).catch((error) => {
-                report(audioStatus, errorText(error), true);
-            });
+            setKnobPosition(current, knob.id, value);
         };
         slider.addEventListener('input', () => update(true));
         update(false);
@@ -225,15 +257,19 @@ function updateKnobs(current: ActiveScene) {
 }
 
 function hasKnownKnobTargets(knob: NonNullable<Scene['knobs']>[number]) {
-    const reference = referenceKnobs?.find(({ id }) => id === knob.id);
-    return reference?.targets.length === knob.targets.length
-        && reference.targets.every(({ param, from, to }) => knob.targets.some((target) =>
+    const reference = referenceKnobs?.find(({ id }) => id === knob.id)?.targets;
+    const targets = knob.targets ?? [];
+    return reference?.length === targets.length
+        && reference.every(({ param, from, to }) => targets.some((target) =>
             target.param === param && Math.sign(target.to - target.from) === Math.sign(to - from)));
 }
 
 function updateMixer(current: ActiveScene) {
     mixer.replaceChildren();
-    const controlled = new Set(current.scene.knobs?.flatMap(({ targets }) => targets.map(({ param }) => param)));
+    const controlled = new Set(current.scene.knobs?.flatMap(({ targets, choices }) => {
+        if (choices) return [choices.param];
+        return targets?.map(({ param }) => param) ?? [];
+    }));
     for (const [index, layer] of current.scene.layers.entries()) {
         const settings = layerSettings[layer.type];
         const section = document.createElement('div');

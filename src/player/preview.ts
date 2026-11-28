@@ -1,4 +1,4 @@
-import { getInitialKnobs, scenes } from './catalog';
+import { getInitialKnobs, scenes, snapKnobPosition } from './catalog';
 import type { Player, PlayerSnapshot, PlayerStatus } from './Player';
 import { createPlayerPreferences } from './preferences';
 
@@ -110,7 +110,8 @@ export function createPreviewPlayer(preferences = createPlayerPreferences()): Pl
             if (!Object.hasOwn(snapshot.knobs, knobId)) {
                 throw new Error('Ручка отсутствует в выбранной сцене');
             }
-            const position = Math.max(0, Math.min(value, 1));
+            const choices = loadedScene.knobs?.find(knob => knob.id === knobId)?.choices;
+            const position = snapKnobPosition(Math.max(0, Math.min(value, 1)), choices);
             preferences.rememberKnob(loadedScene, knobId, position);
             update({ knobs: { ...snapshot.knobs, [knobId]: position } });
         },

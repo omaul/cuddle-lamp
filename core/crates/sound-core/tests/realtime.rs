@@ -90,6 +90,17 @@ fn render_does_not_allocate() {
 }
 
 #[test]
+fn retuning_tone_does_not_allocate() {
+    let (mut controller, mut processor) = create(SAMPLE_RATE);
+    controller.load_scene_json(include_str!("../../../../scenes/solfeggio.json")).unwrap();
+    controller.play().unwrap();
+    assert_eq!(count_allocations_while_rendering(&mut processor, 0.1), 0);
+    controller.set_knob("frequency", 0.0).unwrap();
+    controller.set_knob("frequency", 1.0).unwrap();
+    assert_eq!(count_allocations_while_rendering(&mut processor, 0.2), 0);
+}
+
+#[test]
 fn render_does_not_free_queued_scenes_when_controller_stops_reading() {
     let (mut controller, mut processor) = create(SAMPLE_RATE);
     for _ in 0..24 {

@@ -23,6 +23,10 @@ impl Smoothed {
         self.target = value;
     }
 
+    pub fn finish(&mut self) {
+        self.value = self.target;
+    }
+
     /// Сдвигает значение на один отсчёт к целевому и возвращает его.
     #[inline]
     pub fn next(&mut self) -> f32 {

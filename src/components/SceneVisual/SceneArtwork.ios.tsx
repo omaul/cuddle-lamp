@@ -5,8 +5,8 @@ import SharedSceneArtwork from './SharedSceneArtwork';
 import styles from './styles';
 
 const SceneArtwork: React.FC<SceneArtworkProps> = (props) => {
-    const { sceneId, isPlaying, rms, bells, localMinute, space, isMotionAllowed } = props;
-    if (sceneId !== 'focus' && sceneId !== 'relax' && sceneId !== 'sleep') {
+    const { sceneId, isPlaying, rms, bells, frequencyHz, localMinute, space, isMotionAllowed } = props;
+    if (sceneId !== 'focus' && sceneId !== 'relax' && sceneId !== 'sleep' && sceneId !== 'solfeggio') {
         return <SharedSceneArtwork {...props} />;
     }
     return (
@@ -19,6 +19,7 @@ const SceneArtwork: React.FC<SceneArtworkProps> = (props) => {
             rms={rms}
             localMinute={localMinute}
             bells={bells ?? []}
+            frequencyHz={frequencyHz ?? 0}
             space={space}
         />
     );

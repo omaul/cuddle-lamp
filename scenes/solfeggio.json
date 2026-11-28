@@ -1,0 +1,26 @@
+{
+    "id": "solfeggio",
+    "name": "Тоны сольфеджио",
+    "harmony": {
+        "root": 60,
+        "scale": [0],
+        "chords": [[0]],
+        "chordSeconds": [60, 60]
+    },
+    "params": { "reverbLevel": 0 },
+    "layers": [
+        { "type": "tone", "id": "tone", "params": { "level": 0.12 } }
+    ],
+    "knobs": [
+        {
+            "id": "frequency",
+            "name": "Частота",
+            "default": 0.5,
+            "choices": {
+                "param": "tone.frequencyHz",
+                "values": [174, 285, 396, 417, 528, 639, 741, 852, 963],
+                "unit": "Гц"
+            }
+        }
+    ]
+}

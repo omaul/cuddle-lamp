@@ -17,8 +17,9 @@ import {
 } from 'react-native';
 import Choice from '../components/Choice';
 import Knob from '../components/Knob';
+import PresetPicker from '../components/PresetPicker';
 import SceneVisual, { type SceneVisualInput } from '../components/SceneVisual';
-import type { Scene } from '../player/catalog';
+import { getKnobChoice, type Scene } from '../player/catalog';
 import type { PlayerSnapshot, PlayerStatus } from '../player/Player';
 import styles from './styles';
 
@@ -124,8 +125,18 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
         (knob) => snapshot.knobs[knob.id] !== undefined,
     );
     const sceneId = snapshot.sceneId ?? '';
+    const isToneScene = sceneId === 'solfeggio';
+    const hasToneArtwork = Platform.OS === 'ios' && isToneScene;
+    const sceneName = snapshot.sceneName ?? scene?.name ?? 'Плеер';
+    const frequencyKnob = isToneScene
+        ? knobLabels.find(knob => knob.id === 'frequency' && knob.choices?.param === 'tone.frequencyHz')
+        : undefined;
+    const frequencyHz = frequencyKnob?.choices
+        ? getKnobChoice(frequencyKnob.choices, snapshot.knobs[frequencyKnob.id])
+        : undefined;
     const overlayPointerEvents = Platform.OS === 'ios' && sceneId === 'relax' ? 'box-none' : 'auto';
     const activeKnob = knobLabels.find((knob) => knob.id === selectedKnobBySceneId[sceneId]) ?? knobLabels[0];
+    const hasStandaloneFrequency = frequencyKnob !== undefined && knobLabels.length === 1;
     const isPlaying = snapshot.status === 'playing' || snapshot.status === 'fading';
     const canPlay = snapshot.status !== 'loading' && snapshot.status !== 'error' && snapshot.sceneId !== null;
     const remainingSeconds = snapshot.remainingSeconds;
@@ -145,16 +156,77 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
         }
     };
 
+    const renderTimer = () => (
+        <View style={[styles.panel, styles.timerPanel, isToneScene && styles.toneTimerPanel]}>
+            <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Таймер сна, ${timerLabel}`}
+                accessibilityState={{ expanded: openPanel === 'timer' }}
+                onPress={() => {
+                    setTimerMinutesInput('');
+                    sheetOffset.setValue(0);
+                    setOpenPanel('timer');
+                }}
+                style={[styles.row, styles.timerRow]}
+            >
+                <Text style={styles.rowTitle}>Таймер сна</Text>
+                <Text style={[styles.secondary, remainingSeconds !== null && styles.accentText]}>
+                    {timerLabel} ›
+                </Text>
+            </Pressable>
+            {canExtendTimer && (
+                <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Продлить таймер на 10 минут"
+                    onPress={() => onExtendTimer(TIMER_EXTENSION_SECONDS)}
+                    style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}
+                >
+                    <Text style={styles.accentText}>+10 мин</Text>
+                </Pressable>
+            )}
+        </View>
+    );
+
+    const renderPlayButton = () => (
+        <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isPlaying ? 'Приостановить' : 'Воспроизвести'}
+            accessibilityValue={isToneScene ? { text: STATUS_LABELS[snapshot.status] } : undefined}
+            accessibilityState={{ disabled: !canPlay }}
+            disabled={!canPlay}
+            onPress={() => onPlaying(!isPlaying)}
+            style={({ pressed }) => [
+                styles.play,
+                isToneScene && styles.tonePlay,
+                (pressed || !canPlay) && styles.pressed,
+            ]}
+        >
+            {isPlaying ? (
+                <View style={styles.pauseIcon}>
+                    <View style={styles.pauseBar} />
+                    <View style={styles.pauseBar} />
+                </View>
+            ) : (
+                <View style={styles.playIcon} />
+            )}
+        </Pressable>
+    );
+
+    const artwork = (
+        <SceneVisual
+            sceneId={snapshot.sceneId}
+            isPlaying={isPlaying}
+            rms={snapshot.rms}
+            bells={snapshot.bells}
+            space={snapshot.knobs.space ?? 0.5}
+            frequencyHz={frequencyHz}
+            inputRef={visualInput}
+        />
+    );
+
     return (
-        <View style={styles.screen}>
-            <SceneVisual
-                sceneId={snapshot.sceneId}
-                isPlaying={isPlaying}
-                rms={snapshot.rms}
-                bells={snapshot.bells}
-                space={snapshot.knobs.space ?? 0.5}
-                inputRef={visualInput}
-            />
+        <View style={[styles.screen, isToneScene && styles.toneScreen]}>
+            {!hasToneArtwork && artwork}
             <Overlay pointerEvents={overlayPointerEvents} style={styles.screen}>
                 <View pointerEvents={overlayPointerEvents} style={styles.content}>
                     <View style={styles.topBar}>
@@ -171,6 +243,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                                     <Pressable
                                         key={item.id}
                                         accessibilityRole="tab"
+                                        accessibilityLabel={item.name}
                                         accessibilityState={{ selected: isSelected }}
                                         onPress={() => onScene(item)}
                                         style={({ pressed }) => [
@@ -180,7 +253,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                                         ]}
                                     >
                                         <Text style={[styles.sceneLabel, isSelected && styles.accentText]}>
-                                            {item.name}
+                                            {item.id === 'solfeggio' ? 'Тоны' : item.name}
                                         </Text>
                                     </Pressable>
                                 );
@@ -200,7 +273,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                         </Pressable>
                     </View>
                     <View
-                        style={styles.visualSpace}
+                        style={[styles.visualSpace, hasToneArtwork && styles.toneVisualSpace]}
                         pointerEvents={sceneId === 'sleep' ? 'auto' : 'none'}
                         onLayout={({ nativeEvent }) => {
                             visualArea.current = nativeEvent.layout;
@@ -209,112 +282,96 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                         onTouchMove={(event) => visualInput.current?.handleTouches(event, visualArea.current)}
                         onTouchEnd={(event) => visualInput.current?.handleTouchEnd(event)}
                         onTouchCancel={(event) => visualInput.current?.handleTouchEnd(event)}
-                    />
-                    <View style={styles.hero}>
-                        <View style={styles.heroText}>
-                            <Text accessibilityRole="header" style={styles.title}>
-                                {snapshot.sceneName ?? scene?.name ?? 'Плеер'}
-                            </Text>
-                            <Text accessibilityLiveRegion="polite" style={styles.secondary}>
-                                {STATUS_LABELS[snapshot.status]}
-                            </Text>
-                        </View>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={isPlaying ? 'Приостановить' : 'Воспроизвести'}
-                            accessibilityState={{ disabled: !canPlay }}
-                            disabled={!canPlay}
-                            onPress={() => onPlaying(!isPlaying)}
-                            style={({ pressed }) => [styles.play, (pressed || !canPlay) && styles.pressed]}
-                        >
-                            {isPlaying ? (
-                                <View style={styles.pauseIcon}>
-                                    <View style={styles.pauseBar} />
-                                    <View style={styles.pauseBar} />
-                                </View>
-                            ) : (
-                                <View style={styles.playIcon} />
-                            )}
-                        </Pressable>
+                    >
+                        {hasToneArtwork && artwork}
                     </View>
+                    {!isToneScene && (
+                        <View style={styles.hero}>
+                            <View style={styles.heroText}>
+                                <Text accessibilityRole="header" style={styles.title}>
+                                    {sceneName}
+                                </Text>
+                                <Text accessibilityLiveRegion="polite" style={styles.secondary}>
+                                    {STATUS_LABELS[snapshot.status]}
+                                </Text>
+                            </View>
+                            {renderPlayButton()}
+                        </View>
+                    )}
                     {error && (
                         <Text accessibilityRole="alert" style={styles.error}>
                             {error}
                         </Text>
                     )}
-                    <View style={[styles.panel, styles.timerPanel]}>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`Таймер сна, ${timerLabel}`}
-                            accessibilityState={{ expanded: openPanel === 'timer' }}
-                            onPress={() => {
-                                setTimerMinutesInput('');
-                                sheetOffset.setValue(0);
-                                setOpenPanel('timer');
-                            }}
-                            style={[styles.row, styles.timerRow]}
-                        >
-                            <Text style={styles.rowTitle}>Таймер сна</Text>
-                            <Text style={[styles.secondary, remainingSeconds !== null && styles.accentText]}>
-                                {timerLabel} ›
-                            </Text>
-                        </Pressable>
-                        {canExtendTimer && (
-                            <Pressable
-                                accessibilityRole="button"
-                                accessibilityLabel="Продлить таймер на 10 минут"
-                                onPress={() => onExtendTimer(TIMER_EXTENSION_SECONDS)}
-                                style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}
-                            >
-                                <Text style={styles.accentText}>+10 мин</Text>
-                            </Pressable>
-                        )}
-                    </View>
+                    {!isToneScene && renderTimer()}
                     {activeKnob && (
-                        <View style={styles.soundPanel}>
-                            <Knob
-                                key={`${sceneId}/${activeKnob.id}`}
-                                title={activeKnob.name}
-                                value={snapshot.knobs[activeKnob.id]}
-                                disabled={!canPlay}
-                                onChange={(next) => onKnob(activeKnob.id, next)}
-                            />
-                            <ScrollView
-                                horizontal
-                                showsHorizontalScrollIndicator={false}
-                                contentContainerStyle={styles.parameters}
-                            >
-                                {knobLabels.map((knob) => {
-                                    const isSelected = knob.id === activeKnob.id;
-                                    return (
-                                        <Pressable
-                                            key={knob.id}
-                                            accessibilityRole="tab"
-                                            accessibilityState={{ selected: isSelected }}
-                                            onPress={() =>
-                                                setSelectedKnobBySceneId((items) => ({
-                                                    ...items,
-                                                    [sceneId]: knob.id,
-                                                }))
-                                            }
-                                            style={[styles.parameter, isSelected && styles.activeScene]}
-                                        >
-                                            <Text style={[styles.sceneLabel, isSelected && styles.accentText]}>
-                                                {knob.name}
-                                            </Text>
-                                        </Pressable>
-                                    );
-                                })}
-                            </ScrollView>
-                            <Pressable
-                                accessibilityRole="button"
-                                accessibilityState={{ disabled: !canPlay }}
-                                disabled={!canPlay}
-                                onPress={onResetKnobs}
-                                style={({ pressed }) => [styles.resetKnobs, (pressed || !canPlay) && styles.pressed]}
-                            >
-                                <Text style={styles.secondary}>Вернуть авторский звук</Text>
-                            </Pressable>
+                        <View style={[styles.soundPanel, hasStandaloneFrequency && styles.standalonePresetPanel]}>
+                            {activeKnob.choices ? (
+                                <PresetPicker
+                                    key={`${sceneId}/${activeKnob.id}`}
+                                    title={activeKnob.name}
+                                    choices={activeKnob.choices}
+                                    position={snapshot.knobs[activeKnob.id]}
+                                    isDisabled={!canPlay}
+                                    heading={hasStandaloneFrequency ? sceneName : undefined}
+                                    isCompact={hasStandaloneFrequency}
+                                    onSelect={next => onKnob(activeKnob.id, next)}
+                                />
+                            ) : (
+                                <Knob
+                                    key={`${sceneId}/${activeKnob.id}`}
+                                    title={activeKnob.name}
+                                    value={snapshot.knobs[activeKnob.id]}
+                                    disabled={!canPlay}
+                                    onChange={(next) => onKnob(activeKnob.id, next)}
+                                />
+                            )}
+                            {(!activeKnob.choices || knobLabels.length > 1) && (
+                                <ScrollView
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={styles.parameters}
+                                >
+                                    {knobLabels.map((knob) => {
+                                        const isSelected = knob.id === activeKnob.id;
+                                        return (
+                                            <Pressable
+                                                key={knob.id}
+                                                accessibilityRole="tab"
+                                                accessibilityState={{ selected: isSelected }}
+                                                onPress={() =>
+                                                    setSelectedKnobBySceneId((items) => ({
+                                                        ...items,
+                                                        [sceneId]: knob.id,
+                                                    }))
+                                                }
+                                                style={[styles.parameter, isSelected && styles.activeScene]}
+                                            >
+                                                <Text style={[styles.sceneLabel, isSelected && styles.accentText]}>
+                                                    {knob.name}
+                                                </Text>
+                                            </Pressable>
+                                        );
+                                    })}
+                                </ScrollView>
+                            )}
+                            {!hasStandaloneFrequency && (
+                                <Pressable
+                                    accessibilityRole="button"
+                                    accessibilityState={{ disabled: !canPlay }}
+                                    disabled={!canPlay}
+                                    onPress={onResetKnobs}
+                                    style={({ pressed }) => [styles.resetKnobs, (pressed || !canPlay) && styles.pressed]}
+                                >
+                                    <Text style={styles.secondary}>Вернуть авторский звук</Text>
+                                </Pressable>
+                            )}
+                        </View>
+                    )}
+                    {isToneScene && (
+                        <View style={styles.toneTransport}>
+                            {renderTimer()}
+                            {renderPlayButton()}
                         </View>
                     )}
                 </View>

@@ -50,19 +50,20 @@ pub enum LayerSpec {
     Pad(SimpleLayerSpec),
     Noise(SimpleLayerSpec),
     Bells(BellsSpec),
+    Tone(SimpleLayerSpec),
 }
 
 impl LayerSpec {
     pub fn id(&self) -> &str {
         match self {
-            Self::Pad(spec) | Self::Noise(spec) => &spec.id,
+            Self::Pad(spec) | Self::Noise(spec) | Self::Tone(spec) => &spec.id,
             Self::Bells(spec) => &spec.id,
         }
     }
 
     pub fn params(&self) -> &BTreeMap<String, f32> {
         match self {
-            Self::Pad(spec) | Self::Noise(spec) => &spec.params,
+            Self::Pad(spec) | Self::Noise(spec) | Self::Tone(spec) => &spec.params,
             Self::Bells(spec) => &spec.params,
         }
     }
@@ -96,7 +97,30 @@ pub struct KnobSpec {
     pub name: String,
     #[serde(default = "default_knob_position")]
     pub default: f32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<KnobTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<KnobChoices>,
+}
+
+/// Список точных значений одного параметра. Позиции ручки равномерно распределены от 0 до 1.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KnobChoices {
+    pub param: String,
+    pub values: Vec<f32>,
+    pub unit: String,
+}
+
+pub(crate) fn choice_index(position: f32, count: usize) -> usize {
+    (position * (count - 1) as f32).round() as usize
+}
+
+pub(crate) fn snap_position(position: f32, choice_count: usize) -> f32 {
+    if choice_count < 2 {
+        return position;
+    }
+    choice_index(position, choice_count) as f32 / (choice_count - 1) as f32
 }
 
 /// Параметр, которым управляет ручка: значение в положении 0, значение в положении 1 и кривая между ними.

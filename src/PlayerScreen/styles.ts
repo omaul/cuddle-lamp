@@ -3,6 +3,7 @@ import { colors } from '../theme';
 
 export default StyleSheet.create({
     screen: { flex: 1 },
+    toneScreen: { backgroundColor: '#231f1c' },
     content: {
         flex: 1,
         width: '100%',
@@ -13,6 +14,7 @@ export default StyleSheet.create({
         gap: 8,
     },
     visualSpace: { flex: 1 },
+    toneVisualSpace: { marginHorizontal: -20 },
     modalLayout: { flex: 1, justifyContent: 'flex-end' },
     backdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#00000070' },
     dismissArea: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
@@ -51,6 +53,7 @@ export default StyleSheet.create({
         transform: [{ rotate: '45deg' }],
     },
     soundPanel: { borderRadius: 24, paddingTop: 10, backgroundColor: colors.surface },
+    standalonePresetPanel: { paddingTop: 0 },
     parameters: { flexGrow: 1, justifyContent: 'center', gap: 4, padding: 5 },
     parameter: { minHeight: 44, paddingHorizontal: 10, justifyContent: 'center', borderRadius: 24 },
     activeScene: { backgroundColor: colors.selected },
@@ -106,6 +109,9 @@ export default StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    toneTransport: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    tonePlay: { width: 52, height: 52, borderRadius: 26 },
+    toneTimerPanel: { flex: 1 },
     pressed: { opacity: 0.58 },
     playIcon: {
         width: 0,

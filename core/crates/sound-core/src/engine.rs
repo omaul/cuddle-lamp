@@ -80,6 +80,14 @@ pub struct SceneState {
 pub struct KnobLabel {
     pub id: String,
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub choices: Option<crate::scene::KnobChoices>,
+}
+
+struct KnobSetting {
+    id: String,
+    default: f32,
+    choice_count: usize,
 }
 
 enum SceneChange {
@@ -198,7 +206,7 @@ pub fn create(sample_rate: f32) -> (Controller, Processor) {
         garbage: garbage_receiver,
         state: StateReader { shared: Arc::clone(&shared) },
         sample_rate,
-        knob_defaults: Vec::new(),
+        knob_settings: Vec::new(),
         queued_scene_id: None,
         outstanding_scenes: 0,
         queued_command: 0,
@@ -241,7 +249,7 @@ pub struct Controller {
     garbage: Receiver<Box<SceneRuntime>>,
     state: StateReader,
     sample_rate: f32,
-    knob_defaults: Vec<(String, f32)>,
+    knob_settings: Vec<KnobSetting>,
     queued_scene_id: Option<String>,
     outstanding_scenes: usize,
     queued_command: u32,
@@ -271,13 +279,25 @@ impl Controller {
             .iter()
             .map(|knob| {
                 let position = saved_knobs.get(&knob.id).copied().filter(|value| (0.0..=1.0).contains(value));
-                (knob.id.clone(), position.unwrap_or(knob.default))
+                let choice_count = knob.choices.as_ref().map_or(0, |choices| choices.values.len());
+                (knob.id.clone(), crate::scene::snap_position(position.unwrap_or(knob.default), choice_count))
             })
             .collect();
         let runtime = SceneRuntime::new(scene, self.sample_rate, &knobs)?;
         self.send(Command::LoadScene(Box::new(runtime)))?;
         self.outstanding_scenes += 1;
-        self.knob_defaults = scene.knobs.iter().map(|knob| (knob.id.clone(), knob.default)).collect();
+        self.knob_settings = scene
+            .knobs
+            .iter()
+            .map(|knob| {
+                let choice_count = knob.choices.as_ref().map_or(0, |choices| choices.values.len());
+                KnobSetting {
+                    id: knob.id.clone(),
+                    default: crate::scene::snap_position(knob.default, choice_count),
+                    choice_count,
+                }
+            })
+            .collect();
         self.queued_scene_id = Some(scene.id.clone());
         self.scene_changes.push_back((
             self.queued_command,
@@ -288,7 +308,11 @@ impl Controller {
                 knob_labels: scene
                     .knobs
                     .iter()
-                    .map(|knob| KnobLabel { id: knob.id.clone(), name: knob.name.clone() })
+                    .map(|knob| KnobLabel {
+                        id: knob.id.clone(),
+                        name: knob.name.clone(),
+                        choices: knob.choices.clone(),
+                    })
                     .collect(),
             }),
         ));
@@ -311,13 +335,17 @@ impl Controller {
 
     /// Ставит ручку текущей сцены в положение от 0 до 1.
     pub fn set_knob(&mut self, knob_id: &str, position: f32) -> Result<(), EngineError> {
-        let Some(index) = self.knob_defaults.iter().position(|(id, _)| id == knob_id) else {
+        let Some(index) = self.knob_settings.iter().position(|knob| knob.id == knob_id) else {
             return Err(EngineError::UnknownKnob(knob_id.to_owned()));
+        };
+        let position = if position.is_finite() {
+            crate::scene::snap_position(position.clamp(0.0, 1.0), self.knob_settings[index].choice_count)
+        } else {
+            position
         };
         self.send(Command::SetKnob { index, position })?;
         if position.is_finite() {
-            self.scene_changes
-                .push_back((self.queued_command, SceneChange::Knob(knob_id.to_owned(), position.clamp(0.0, 1.0))));
+            self.scene_changes.push_back((self.queued_command, SceneChange::Knob(knob_id.to_owned(), position)));
         }
         Ok(())
     }
@@ -335,8 +363,8 @@ impl Controller {
             return Err(EngineError::SceneChanged);
         }
         self.send(Command::ResetKnobs)?;
-        self.scene_changes
-            .push_back((self.queued_command, SceneChange::ResetKnobs(self.knob_defaults.iter().cloned().collect())));
+        let defaults = self.knob_settings.iter().map(|knob| (knob.id.clone(), knob.default)).collect();
+        self.scene_changes.push_back((self.queued_command, SceneChange::ResetKnobs(defaults)));
         Ok(())
     }
 
@@ -489,13 +517,15 @@ impl Processor {
                 Command::Play => self.start_playing(),
                 Command::Pause => self.begin_stopping(PAUSE_FADE_SECONDS),
                 Command::SetKnob { index, position } => {
+                    let is_silent = !self.is_audible() || self.pending_scene.is_some();
                     if let Some(target) = self.pending_scene.as_mut().or(self.current.as_mut()) {
-                        target.set_knob(index, position);
+                        target.set_knob(index, position, is_silent);
                     }
                 }
                 Command::ResetKnobs => {
+                    let is_silent = !self.is_audible() || self.pending_scene.is_some();
                     if let Some(target) = self.pending_scene.as_mut().or(self.current.as_mut()) {
-                        target.reset_knobs();
+                        target.reset_knobs(is_silent);
                     }
                 }
                 Command::SetTimer(seconds) => {
@@ -553,8 +583,12 @@ impl Processor {
     }
 
     fn start_playing(&mut self) {
-        if self.current.is_none() {
+        let is_silent = !self.is_audible();
+        let Some(current) = self.current.as_mut() else {
             return;
+        };
+        if is_silent {
+            current.finish_choice_transitions();
         }
         self.status = PlaybackStatus::Playing;
         self.timer_expired = false;

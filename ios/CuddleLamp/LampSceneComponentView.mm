@@ -10,19 +10,6 @@
 
 using namespace facebook::react;
 
-namespace {
-
-// Сохраняем скорость контура при смене цели, в том числе в момент отпускания пальца.
-void advanceDragAxis(CGFloat &position, CGFloat &velocity, double target, double frequency, double elapsed,
-                    double decay) {
-    double error = position - target;
-    double rate = velocity + frequency * error;
-    position = target + (error + rate * elapsed) * decay;
-    velocity = (velocity - frequency * rate * elapsed) * decay;
-}
-
-}
-
 @interface LampSceneSurface : UIView
 - (void)applyProps:(const LampSceneViewProps &)props;
 @end
@@ -75,7 +62,8 @@ void advanceDragAxis(CGFloat &position, CGFloat &velocity, double target, double
 - (BOOL)hasDragMotion {
     return _targetDragOffset.dx != 0 || _targetDragOffset.dy != 0
         || _relaxDrag.offset.dx != 0 || _relaxDrag.offset.dy != 0
-        || _dragVelocity.dx != 0 || _dragVelocity.dy != 0;
+        || _dragVelocity.dx != 0 || _dragVelocity.dy != 0
+        || _relaxDrag.hasTearAnimation();
 }
 
 - (void)updateClock {
@@ -123,6 +111,7 @@ void advanceDragAxis(CGFloat &position, CGFloat &velocity, double target, double
     if (_dragTouch || !self.userInteractionEnabled) return;
     _dragTouch = touches.anyObject;
     _dragStart = lamp::getScenePoint([_dragTouch locationInView:self], self.bounds.size);
+    _relaxDrag.beginTearGrip(_dragStart, _phase, _energy, _space);
     if (![self hasDragMotion]) {
         _relaxDrag.anchor = _dragStart;
     }
@@ -147,6 +136,7 @@ void advanceDragAxis(CGFloat &position, CGFloat &velocity, double target, double
     if (!_dragTouch || ![touches containsObject:_dragTouch]) return;
     _dragTouch = nil;
     _targetDragOffset = {};
+    _relaxDrag.releaseTears();
     [self updateClock];
 }
 
@@ -164,10 +154,10 @@ void advanceDragAxis(CGFloat &position, CGFloat &velocity, double target, double
         _relaxDrag.anchor.x += (_dragStart.x - _relaxDrag.anchor.x) * step;
         _relaxDrag.anchor.y += (_dragStart.y - _relaxDrag.anchor.y) * step;
     }
-    double frequency = _dragTouch ? 24.0 : 10.5;
-    double decay = std::exp(-frequency * elapsed);
-    advanceDragAxis(_relaxDrag.offset.dx, _dragVelocity.dx, _targetDragOffset.dx, frequency, elapsed, decay);
-    advanceDragAxis(_relaxDrag.offset.dy, _dragVelocity.dy, _targetDragOffset.dy, frequency, elapsed, decay);
+    double returnFrequency = _relaxDrag.hasVisibleTears() ? 7.5 : 10.5;
+    double frequency = _dragTouch ? 24.0 : returnFrequency;
+    lamp::advanceSpringAxis(_relaxDrag.offset.dx, _dragVelocity.dx, _targetDragOffset.dx, frequency, elapsed);
+    lamp::advanceSpringAxis(_relaxDrag.offset.dy, _dragVelocity.dy, _targetDragOffset.dy, frequency, elapsed);
     if (!_dragTouch && std::hypot(_relaxDrag.offset.dx, _relaxDrag.offset.dy) < 0.0003
         && std::hypot(_dragVelocity.dx, _dragVelocity.dy) < 0.003) {
         _relaxDrag.offset = {};
@@ -199,7 +189,7 @@ void advanceDragAxis(CGFloat &position, CGFloat &velocity, double target, double
     _motionAllowed = props.motionAllowed;
     self.userInteractionEnabled = scene == lamp::Scene::relax && _motionAllowed;
     if (changed || !self.userInteractionEnabled) {
-        redraw |= _relaxDrag.offset.dx != 0 || _relaxDrag.offset.dy != 0;
+        redraw |= _relaxDrag.offset.dx != 0 || _relaxDrag.offset.dy != 0 || _relaxDrag.hasVisibleTears();
         [self clearDrag];
     }
     _targetGlints.fill(0);
@@ -245,6 +235,7 @@ void advanceDragAxis(CGFloat &position, CGFloat &velocity, double target, double
     }
     if (_scene == lamp::Scene::relax && [self hasDragMotion]) {
         [self advanceDrag:elapsed];
+        _relaxDrag.advanceTears(elapsed, _dragTouch != nil, _phase, _energy, _space);
     }
     [self setNeedsDisplay];
     [self updateClock];

@@ -10,8 +10,12 @@ namespace {
 
 constexpr double tau = 2 * M_PI;
 constexpr int contourSteps = 96;
-constexpr int lastRing = 26;
+constexpr int lastRing = RelaxDrag::contourCount - 1;
+constexpr int firstTearRing = lastRing - 8;
 constexpr double dragRadius = 0.23;
+constexpr int contourSectionSteps = 8;
+constexpr double tearThreshold = 0.066;
+constexpr double edgeGripDistance = 0.105;
 
 double getSceneScale(CGSize size) {
     return std::min({size.width * 1.06, size.height * 0.56, 580.0});
@@ -36,28 +40,164 @@ CGPoint getContourPoint(double angle, double fraction, double phase, double ener
                - 0.028 * std::sin(tau * fraction + phase) + x * 0.15};
 }
 
+double getDragWeight(CGPoint point, CGPoint anchor) {
+    double dx = point.x - anchor.x;
+    double dy = point.y - anchor.y;
+    double weight = std::max(0.0, 1 - (dx * dx + dy * dy) / (dragRadius * dragRadius));
+    return weight * weight;
+}
+
+double getOutwardPull(CGPoint start, CGPoint end, const RelaxDrag &drag) {
+    CGPoint middle{(start.x + end.x) / 2, (start.y + end.y) / 2};
+    double weight = getDragWeight(middle, drag.anchor);
+    if (weight == 0) return 0;
+    // Нормаль исходного контура определяет, тянется ли этот участок наружу.
+    double dx = end.x - start.x;
+    double dy = end.y - start.y;
+    double length = std::hypot(dx, dy);
+    return length > 0 ? (drag.offset.dx * dy - drag.offset.dy * dx) / length * weight : 0;
+}
+
+struct TearSite {
+    int step = -1;
+    double excessPull = 0;
+};
+
+struct LooseEnd {
+    double length = 0;
+    double recoil = 0;
+};
+
+struct TearShape {
+    double preferredOffset = 0;
+    LooseEnd first;
+    LooseEnd second;
+};
+
+TearShape getTearShape(int ring) {
+    // Профиль закреплён за нитью, чтобы срез сохранял форму между кадрами.
+    uint32_t seed = (uint32_t(ring) + 1) * 0x9e3779b9u;
+    seed ^= seed >> 16;
+    return {
+        std::lerp(-3.5, 3.5, nextUnit(seed)),
+        {std::lerp(6.2, 11.8, nextUnit(seed)), std::lerp(1.6, 3.3, nextUnit(seed))},
+        {std::lerp(6.2, 11.8, nextUnit(seed)), std::lerp(1.6, 3.3, nextUnit(seed))},
+    };
+}
+
+TearSite findTearSite(int ring, double phase, double energy, double space, const RelaxDrag &drag) {
+    constexpr int searchRadius = 6;
+    int firstStep = drag.tearEdgeStep - searchRadius;
+    int lastStep = drag.tearEdgeStep + searchRadius;
+    double fraction = double(ring) / lastRing;
+    double limit = tearThreshold + (ring % 3) * 0.004;
+    double preferredStep = drag.tearEdgeStep + getTearShape(ring).preferredOffset;
+    double bestScore = 0;
+    TearSite site;
+    CGPoint start = getContourPoint(tau * firstStep / contourSteps, fraction, phase, energy, space);
+    for (int step = firstStep; step <= lastStep; ++step) {
+        CGPoint end = getContourPoint(tau * (step + 1) / contourSteps, fraction, phase, energy, space);
+        double excessPull = getOutwardPull(start, end, drag) - limit;
+        double score = excessPull - 0.0075 * std::abs(step - preferredStep);
+        if (excessPull > 0 && (site.step < 0 || score > bestScore)) {
+            site = {(step + contourSteps) % contourSteps, excessPull};
+            bestScore = score;
+        }
+        start = end;
+    }
+    return site;
+}
+
+double easeTear(double progress) {
+    return progress * progress * (3 - 2 * progress);
+}
+
+CGPoint getLooseEndPoint(CGPoint point, CGPoint root, CGVector direction, double amount, double sway) {
+    double dx = point.x - root.x;
+    double dy = point.y - root.y;
+    double length = std::hypot(dx, dy);
+    // Свободный конец вытягивается по направлению рывка и колеблется поперёк него.
+    double along = 0.94 * length;
+    double across = 0.35 * (dy * direction.dx - dx * direction.dy) + 0.11 * length * sway;
+    CGPoint trailing{root.x + direction.dx * along - direction.dy * across,
+                     root.y + direction.dy * along + direction.dx * across};
+    return {std::lerp(point.x, trailing.x, amount), std::lerp(point.y, trailing.y, amount)};
+}
+
+void addTornContourSection(CGContextRef context, const CGPoint *points, int lastIntactStep,
+                           CGPoint firstEnd, CGPoint secondEnd) {
+    CGContextMoveToPoint(context, points[0].x, points[0].y);
+    for (int index = 1; index <= lastIntactStep; ++index) {
+        CGContextAddLineToPoint(context, points[index].x, points[index].y);
+    }
+    CGContextAddLineToPoint(context, firstEnd.x, firstEnd.y);
+    CGContextMoveToPoint(context, secondEnd.x, secondEnd.y);
+    for (int index = lastIntactStep + 1; index <= contourSectionSteps; ++index) {
+        CGContextAddLineToPoint(context, points[index].x, points[index].y);
+    }
+}
+
 void drawContours(CGContextRef context, double phase, double energy, double space, const RelaxDrag &drag) {
     std::array<CGPoint, contourSteps + 1> points;
     bool isDeformed = drag.offset.dx != 0 || drag.offset.dy != 0;
     CGContextSetLineJoin(context, kCGLineJoinRound);
     for (int ring = 0; ring <= lastRing; ++ring) {
         double fraction = double(ring) / lastRing;
-        for (int step = 0; step <= contourSteps; ++step) {
+        const RelaxTear &tear = drag.tears[ring];
+        auto getPulledPoint = [&](double step, double recoil) {
             CGPoint point = getContourPoint(tau * step / contourSteps, fraction, phase, energy, space);
             if (isDeformed) {
-                double dx = point.x - drag.anchor.x;
-                double dy = point.y - drag.anchor.y;
-                double weight = std::max(0.0, 1 - (dx * dx + dy * dy) / (dragRadius * dragRadius));
-                point.x += drag.offset.dx * weight * weight;
-                point.y += drag.offset.dy * weight * weight;
+                double weight = getDragWeight(point, drag.anchor) * (1 - 0.28 * recoil);
+                point.x += drag.offset.dx * weight;
+                point.y += drag.offset.dy * weight;
             }
-            points[step] = point;
+            point.x -= tear.direction.dx * 0.018 * recoil;
+            point.y -= tear.direction.dy * 0.018 * recoil;
+            return point;
+        };
+        TearShape shape = tear.opening > 0 ? getTearShape(ring) : TearShape{};
+        double flex = 0.86 * tear.opening * tear.flex;
+        CGPoint firstRoot{}, secondRoot{};
+        double firstSway = 0, secondSway = 0;
+        if (flex > 0) {
+            firstRoot = getPulledPoint(tear.step - shape.first.length, 0);
+            secondRoot = getPulledPoint(tear.step + shape.second.length, 0);
+            double swayPhase = 3.2 * tear.motionTime + 0.37 * ring;
+            firstSway = std::sin(swayPhase);
+            secondSway = std::sin(swayPhase + 1.1);
+        }
+        auto getPoint = [&](double step, double distanceFromTear) {
+            if (tear.opening == 0) return getPulledPoint(step, 0);
+            bool isFirstEnd = std::signbit(distanceFromTear);
+            const LooseEnd &end = isFirstEnd ? shape.first : shape.second;
+            double distance = std::abs(distanceFromTear);
+            double recoil = tear.opening * (1 - easeTear(std::min(1.0, distance / (end.length + 2))));
+            // Концы сдвигаются вдоль линии и увлекают за собой соседние точки.
+            step += std::copysign(end.recoil * recoil, distanceFromTear);
+            CGPoint point = getPulledPoint(step, recoil);
+            if (flex > 0 && distance < end.length) {
+                CGPoint root = isFirstEnd ? firstRoot : secondRoot;
+                double sway = isFirstEnd ? firstSway : secondSway;
+                double weight = 1 - easeTear(distance / end.length);
+                point = getLooseEndPoint(point, root, tear.direction, flex * weight, sway);
+            }
+            return point;
+        };
+        for (int step = 0; step <= contourSteps; ++step) {
+            double distance = tear.opening > 0 ? std::remainder(step - tear.step, contourSteps) : 0;
+            points[step] = getPoint(step, distance);
         }
         CGContextSetLineWidth(context, ring % 7 == 0 ? 0.0026 : 0.0018);
-        for (int step = 0; step < contourSteps; step += 8) {
-            double light = std::pow(0.5 + 0.5 * std::cos(tau * (step + 4) / contourSteps - 6 * fraction + phase), 2);
+        for (int step = 0; step < contourSteps; step += contourSectionSteps) {
+            double angle = tau * (step + contourSectionSteps / 2) / contourSteps;
+            double light = std::pow(0.5 + 0.5 * std::cos(angle - 6 * fraction + phase), 2);
             CGContextSetRGBStrokeColor(context, 0.68 + 0.32 * light, 0.46 + 0.33 * light, 0.59, 0.30 + 0.55 * light);
-            CGContextAddLines(context, points.data() + step, 9);
+            if (tear.opening > 0 && tear.step > step && tear.step < step + contourSectionSteps) {
+                addTornContourSection(context, points.data() + step, int(tear.step) - step,
+                                      getPoint(tear.step, -0.0), getPoint(tear.step, 0.0));
+            } else {
+                CGContextAddLines(context, points.data() + step, contourSectionSteps + 1);
+            }
             CGContextStrokePath(context);
         }
     }
@@ -98,6 +238,102 @@ void drawNight(CGContextRef context, double phase, double energy, double space) 
         }
     }
 }
+}
+
+// Сохраняем скорость контура при смене цели, в том числе в момент отпускания пальца.
+void advanceSpringAxis(double &position, double &velocity, double target, double frequency, double elapsed) {
+    double error = position - target;
+    double rate = velocity + frequency * error;
+    double decay = std::exp(-frequency * elapsed);
+    position = target + (error + rate * elapsed) * decay;
+    velocity = (velocity - frequency * rate * elapsed) * decay;
+}
+
+bool RelaxDrag::hasTearAnimation() const {
+    return std::any_of(tears.begin(), tears.end(), [](const RelaxTear &tear) {
+        return tear.isHeld || tear.opening > 0 || tear.strain > 0;
+    });
+}
+
+bool RelaxDrag::hasVisibleTears() const {
+    return std::any_of(tears.begin(), tears.end(), [](const RelaxTear &tear) { return tear.opening > 0; });
+}
+
+void RelaxDrag::beginTearGrip(CGPoint point, double phase, double energy, double space) {
+    tearEdgeStep = -1;
+    double closestDistanceSquared = edgeGripDistance * edgeGripDistance;
+    CGPoint start = getContourPoint(0, 1, phase, energy, space);
+    for (int step = 0; step < contourSteps; ++step) {
+        CGPoint end = getContourPoint(tau * (step + 1) / contourSteps, 1, phase, energy, space);
+        double dx = end.x - start.x;
+        double dy = end.y - start.y;
+        double lengthSquared = dx * dx + dy * dy;
+        double projection = std::clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared, 0.0, 1.0);
+        double distanceX = point.x - std::lerp(start.x, end.x, projection);
+        double distanceY = point.y - std::lerp(start.y, end.y, projection);
+        double distanceSquared = distanceX * distanceX + distanceY * distanceY;
+        if (distanceSquared < closestDistanceSquared) {
+            closestDistanceSquared = distanceSquared;
+            tearEdgeStep = step;
+        }
+        start = end;
+    }
+}
+
+void RelaxDrag::releaseTears() {
+    tearEdgeStep = -1;
+    for (auto &tear : tears) {
+        tear.isHeld = false;
+        tear.strain = 0;
+    }
+}
+
+void RelaxDrag::advanceTears(double elapsed, bool isDragging, double phase, double energy, double space) {
+    constexpr double openAfterReleaseSeconds = 2.0;
+    double stretch = std::hypot(offset.dx, offset.dy);
+    bool canTear = isDragging && tearEdgeStep >= 0 && stretch > tearThreshold;
+    for (int ring = firstTearRing; ring < contourCount; ++ring) {
+        auto &tear = tears[ring];
+        if (!tear.isHeld && tear.opening == 0) {
+            TearSite site = canTear ? findTearSite(ring, phase, energy, space, *this) : TearSite{};
+            if (site.step < 0) {
+                tear.strain = std::max(0.0, tear.strain - elapsed * 4);
+                continue;
+            }
+            double step = site.step + 0.5;
+            if (std::abs(std::remainder(step - tear.step, contourSteps)) > 6) {
+                tear.strain = 0;
+            }
+            tear.step = step;
+            double load = std::min(1.0, 0.15 + site.excessPull / 0.05);
+            tear.strain += elapsed * load / 0.20;
+            if (tear.strain < 1) continue;
+            tear.direction = {offset.dx / stretch, offset.dy / stretch};
+            tear.isHeld = true;
+            tear.strain = 0;
+        }
+        tear.motionTime += elapsed;
+        if (!tear.isHeld) {
+            tear.releaseTime += elapsed;
+        }
+        bool shouldStayOpen = tear.isHeld || tear.releaseTime < openAfterReleaseSeconds;
+        double target = shouldStayOpen ? 1.0 : 0.0;
+        double frequency = shouldStayOpen ? 5.6 : 3.4;
+        advanceSpringAxis(tear.opening, tear.velocity, target, frequency, elapsed);
+        if (std::abs(tear.opening - target) < 0.001 && std::abs(tear.velocity) < 0.006) {
+            tear.opening = target;
+            tear.velocity = 0;
+        }
+        if (!tear.isHeld && tear.opening == 0) {
+            tear = {};
+            continue;
+        }
+        advanceSpringAxis(tear.flex, tear.flexVelocity, tear.opening, 5.8, elapsed);
+        if (std::abs(tear.flex - tear.opening) < 0.001 && std::abs(tear.flexVelocity) < 0.006) {
+            tear.flex = tear.opening;
+            tear.flexVelocity = 0;
+        }
+    }
 }
 
 CGPoint getScenePoint(CGPoint viewPoint, CGSize size) {

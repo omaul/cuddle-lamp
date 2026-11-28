@@ -25,6 +25,8 @@ export interface Player {
     loadScene(scene: Scene): Promise<void>;
     setPlaying(isPlaying: boolean): Promise<void>;
     setKnob(sceneId: string, knobId: string, value: number): Promise<void>;
+    resetKnobs(sceneId: string): Promise<void>;
     setTimer(seconds: number | null): Promise<void>;
+    extendTimer(seconds: number): Promise<void>;
     setVolume(volume: number): Promise<void>;
 }

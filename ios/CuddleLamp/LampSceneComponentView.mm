@@ -10,6 +10,19 @@
 
 using namespace facebook::react;
 
+namespace {
+
+// Сохраняем скорость контура при смене цели, в том числе в момент отпускания пальца.
+void advanceDragAxis(CGFloat &position, CGFloat &velocity, double target, double frequency, double elapsed,
+                    double decay) {
+    double error = position - target;
+    double rate = velocity + frequency * error;
+    position = target + (error + rate * elapsed) * decay;
+    velocity = (velocity - frequency * rate * elapsed) * decay;
+}
+
+}
+
 @interface LampSceneSurface : UIView
 - (void)applyProps:(const LampSceneViewProps &)props;
 @end
@@ -24,6 +37,10 @@ using namespace facebook::react;
     CFTimeInterval _lastFrame;
     double _phase, _energy, _targetEnergy, _space;
     BOOL _playing, _motionAllowed, _configured;
+    UITouch *_dragTouch;
+    CGPoint _dragStart;
+    lamp::RelaxDrag _relaxDrag;
+    CGVector _targetDragOffset, _dragVelocity;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -55,22 +72,107 @@ using namespace facebook::react;
     }
 }
 
+- (BOOL)hasDragMotion {
+    return _targetDragOffset.dx != 0 || _targetDragOffset.dy != 0
+        || _relaxDrag.offset.dx != 0 || _relaxDrag.offset.dy != 0
+        || _dragVelocity.dx != 0 || _dragVelocity.dy != 0;
+}
+
 - (void)updateClock {
-    BOOL active = self.window && _playing && _motionAllowed;
-    if (active && !_clock) {
-        _clock = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
-        _clock.preferredFrameRateRange = CAFrameRateRangeMake(20, 30, 30);
-        [_clock addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
-    } else if (!active && _clock) {
+    BOOL dragging = [self hasDragMotion];
+    if (!self.window || !_motionAllowed || (!_playing && !dragging)) {
         [_clock invalidate];
         _clock = nil;
         _lastFrame = 0;
+        return;
+    }
+    if (!_clock) {
+        _clock = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
+        [_clock addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    }
+    float rate = dragging ? 60 : 30;
+    if (_clock.preferredFrameRateRange.preferred != rate) {
+        _clock.preferredFrameRateRange = CAFrameRateRangeMake(dragging ? 30 : 20, rate, rate);
     }
 }
 
 - (void)didMoveToWindow {
     [super didMoveToWindow];
+    if (!self.window) {
+        [self clearDrag];
+    }
     [self updateClock];
+}
+
+- (void)clearDrag {
+    _dragTouch = nil;
+    _relaxDrag = {};
+    _targetDragOffset = {};
+    _dragVelocity = {};
+}
+
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    if (!self.userInteractionEnabled || ![super pointInside:point withEvent:event]) {
+        return NO;
+    }
+    CGPoint scenePoint = lamp::getScenePoint(point, self.bounds.size);
+    return lamp::isInsideRelaxFigure(scenePoint, _phase, _energy, _space);
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (_dragTouch || !self.userInteractionEnabled) return;
+    _dragTouch = touches.anyObject;
+    _dragStart = lamp::getScenePoint([_dragTouch locationInView:self], self.bounds.size);
+    if (![self hasDragMotion]) {
+        _relaxDrag.anchor = _dragStart;
+    }
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (!_dragTouch || ![touches containsObject:_dragTouch]) return;
+
+    constexpr double maxOffset = 0.15;
+    constexpr double initialResponse = 0.66;
+    CGPoint point = lamp::getScenePoint([_dragTouch locationInView:self], self.bounds.size);
+    double dx = point.x - _dragStart.x;
+    double dy = point.y - _dragStart.y;
+    double length = std::hypot(dx, dy);
+    double resistedLength = maxOffset * std::tanh(initialResponse * length / maxOffset);
+    double scale = length > 0 ? resistedLength / length : 0;
+    _targetDragOffset = {dx * scale, dy * scale};
+    [self updateClock];
+}
+
+- (void)endDragWithTouches:(NSSet<UITouch *> *)touches {
+    if (!_dragTouch || ![touches containsObject:_dragTouch]) return;
+    _dragTouch = nil;
+    _targetDragOffset = {};
+    [self updateClock];
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self endDragWithTouches:touches];
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self endDragWithTouches:touches];
+}
+
+- (void)advanceDrag:(double)elapsed {
+    if (_targetDragOffset.dx != 0 || _targetDragOffset.dy != 0) {
+        double step = -std::expm1(-elapsed / 0.055);
+        _relaxDrag.anchor.x += (_dragStart.x - _relaxDrag.anchor.x) * step;
+        _relaxDrag.anchor.y += (_dragStart.y - _relaxDrag.anchor.y) * step;
+    }
+    double frequency = _dragTouch ? 24.0 : 10.5;
+    double decay = std::exp(-frequency * elapsed);
+    advanceDragAxis(_relaxDrag.offset.dx, _dragVelocity.dx, _targetDragOffset.dx, frequency, elapsed, decay);
+    advanceDragAxis(_relaxDrag.offset.dy, _dragVelocity.dy, _targetDragOffset.dy, frequency, elapsed, decay);
+    if (!_dragTouch && std::hypot(_relaxDrag.offset.dx, _relaxDrag.offset.dy) < 0.0003
+        && std::hypot(_dragVelocity.dx, _dragVelocity.dy) < 0.003) {
+        _relaxDrag.offset = {};
+        _dragVelocity = {};
+    }
 }
 
 - (void)applyProps:(const LampSceneViewProps &)props {
@@ -95,6 +197,11 @@ using namespace facebook::react;
     _space = space;
     _playing = props.playing;
     _motionAllowed = props.motionAllowed;
+    self.userInteractionEnabled = scene == lamp::Scene::relax && _motionAllowed;
+    if (changed || !self.userInteractionEnabled) {
+        redraw |= _relaxDrag.offset.dx != 0 || _relaxDrag.offset.dy != 0;
+        [self clearDrag];
+    }
     _targetGlints.fill(0);
     if (scene == lamp::Scene::gallery && _playing && _motionAllowed) {
         for (const auto &bell : props.bells) {
@@ -132,8 +239,13 @@ using namespace facebook::react;
         [self setNeedsDisplay];
         return;
     }
-    double speed = _scene == lamp::Scene::sleep ? 1.0 / 30 : 1.0 / 19;
-    _phase = std::fmod(_phase + elapsed * 2 * M_PI * speed, 2 * M_PI);
+    if (_playing) {
+        double speed = _scene == lamp::Scene::sleep ? 1.0 / 30 : 1.0 / 19;
+        _phase = std::fmod(_phase + elapsed * 2 * M_PI * speed, 2 * M_PI);
+    }
+    if (_scene == lamp::Scene::relax && [self hasDragMotion]) {
+        [self advanceDrag:elapsed];
+    }
     [self setNeedsDisplay];
     [self updateClock];
 }
@@ -159,7 +271,7 @@ using namespace facebook::react;
         }
         lamp::gallery::drawReflections(context, size, _localMinute, _energy, _glints);
     } else {
-        lamp::drawScene(context, self.bounds.size, _scene, _phase, _energy, _space);
+        lamp::drawScene(context, self.bounds.size, _scene, _phase, _energy, _space, _relaxDrag);
     }
 }
 @end

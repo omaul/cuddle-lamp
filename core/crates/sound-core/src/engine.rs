@@ -85,6 +85,7 @@ pub struct KnobLabel {
 enum SceneChange {
     Load(SceneState),
     Knob(String, f32),
+    ResetKnobs(BTreeMap<String, f32>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -123,7 +124,9 @@ enum Command {
     Play,
     Pause,
     SetKnob { index: usize, position: f32 },
+    ResetKnobs,
     SetTimer(Option<f32>),
+    ExtendTimer(f32),
 }
 
 struct SharedState {
@@ -195,7 +198,7 @@ pub fn create(sample_rate: f32) -> (Controller, Processor) {
         garbage: garbage_receiver,
         state: StateReader { shared: Arc::clone(&shared) },
         sample_rate,
-        knob_ids: Vec::new(),
+        knob_defaults: Vec::new(),
         queued_scene_id: None,
         outstanding_scenes: 0,
         queued_command: 0,
@@ -238,7 +241,7 @@ pub struct Controller {
     garbage: Receiver<Box<SceneRuntime>>,
     state: StateReader,
     sample_rate: f32,
-    knob_ids: Vec<String>,
+    knob_defaults: Vec<(String, f32)>,
     queued_scene_id: Option<String>,
     outstanding_scenes: usize,
     queued_command: u32,
@@ -250,21 +253,38 @@ impl Controller {
     /// Проверяет сцену, собирает её и передаёт в аудиопоток. Если звук играет,
     /// новая сцена плавно сменяет старую.
     pub fn load_scene(&mut self, scene: &Scene) -> Result<(), EngineError> {
+        self.load_scene_with_knobs(scene, &BTreeMap::new())
+    }
+
+    /// Загружает сцену с сохранёнными положениями ручек и сохраняет авторские значения для сброса.
+    pub fn load_scene_with_knobs(
+        &mut self,
+        scene: &Scene,
+        saved_knobs: &BTreeMap<String, f32>,
+    ) -> Result<(), EngineError> {
         self.collect_garbage();
         if self.outstanding_scenes == SCENE_CAPACITY {
             return Err(EngineError::QueueFull);
         }
-        let runtime = SceneRuntime::new(scene, self.sample_rate)?;
+        let knobs = scene
+            .knobs
+            .iter()
+            .map(|knob| {
+                let position = saved_knobs.get(&knob.id).copied().filter(|value| (0.0..=1.0).contains(value));
+                (knob.id.clone(), position.unwrap_or(knob.default))
+            })
+            .collect();
+        let runtime = SceneRuntime::new(scene, self.sample_rate, &knobs)?;
         self.send(Command::LoadScene(Box::new(runtime)))?;
         self.outstanding_scenes += 1;
-        self.knob_ids = scene.knobs.iter().map(|knob| knob.id.clone()).collect();
+        self.knob_defaults = scene.knobs.iter().map(|knob| (knob.id.clone(), knob.default)).collect();
         self.queued_scene_id = Some(scene.id.clone());
         self.scene_changes.push_back((
             self.queued_command,
             SceneChange::Load(SceneState {
                 scene_id: scene.id.clone(),
                 name: scene.name.clone(),
-                knobs: scene.knobs.iter().map(|knob| (knob.id.clone(), knob.default)).collect(),
+                knobs,
                 knob_labels: scene
                     .knobs
                     .iter()
@@ -291,7 +311,7 @@ impl Controller {
 
     /// Ставит ручку текущей сцены в положение от 0 до 1.
     pub fn set_knob(&mut self, knob_id: &str, position: f32) -> Result<(), EngineError> {
-        let Some(index) = self.knob_ids.iter().position(|id| id == knob_id) else {
+        let Some(index) = self.knob_defaults.iter().position(|(id, _)| id == knob_id) else {
             return Err(EngineError::UnknownKnob(knob_id.to_owned()));
         };
         self.send(Command::SetKnob { index, position })?;
@@ -310,10 +330,25 @@ impl Controller {
         self.set_knob(knob_id, position)
     }
 
+    pub fn reset_scene_knobs(&mut self, scene_id: &str) -> Result<(), EngineError> {
+        if self.queued_scene_id.as_deref() != Some(scene_id) {
+            return Err(EngineError::SceneChanged);
+        }
+        self.send(Command::ResetKnobs)?;
+        self.scene_changes
+            .push_back((self.queued_command, SceneChange::ResetKnobs(self.knob_defaults.iter().cloned().collect())));
+        Ok(())
+    }
+
     /// Включает таймер: через `seconds` секунд игры звук плавно затихнет и встанет на паузу.
     /// `None` выключает таймер.
     pub fn set_timer(&mut self, seconds: Option<f32>) -> Result<(), EngineError> {
         self.send(Command::SetTimer(seconds))
+    }
+
+    /// Прибавляет время к оставшемуся отсчёту. Если таймер уже истёк или выключен, ничего не меняет.
+    pub fn extend_timer(&mut self, seconds: f32) -> Result<(), EngineError> {
+        self.send(Command::ExtendTimer(seconds))
     }
 
     /// Задаёт общую громкость от 0 до 1. Применяется, даже если аудиопоток стоит.
@@ -352,6 +387,11 @@ impl Controller {
                 SceneChange::Knob(id, value) => {
                     if let Some(scene) = &mut self.confirmed_scene {
                         scene.knobs.insert(id, value);
+                    }
+                }
+                SceneChange::ResetKnobs(knobs) => {
+                    if let Some(scene) = &mut self.confirmed_scene {
+                        scene.knobs = knobs;
                     }
                 }
             }
@@ -453,10 +493,23 @@ impl Processor {
                         target.set_knob(index, position);
                     }
                 }
+                Command::ResetKnobs => {
+                    if let Some(target) = self.pending_scene.as_mut().or(self.current.as_mut()) {
+                        target.reset_knobs();
+                    }
+                }
                 Command::SetTimer(seconds) => {
                     self.timer_samples_left = seconds
                         .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
                         .map(|seconds| (seconds * self.sample_rate) as u64);
+                }
+                Command::ExtendTimer(seconds) => {
+                    if let Some(samples_left) = self.timer_samples_left.as_mut().filter(|left| **left > 0)
+                        && seconds.is_finite()
+                        && seconds > 0.0
+                    {
+                        *samples_left = samples_left.saturating_add((seconds * self.sample_rate) as u64);
+                    }
                 }
             }
         }

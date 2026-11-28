@@ -64,7 +64,14 @@ const PlayerContainer: React.FC<PlayerContainerProps> = ({ player, onScenario })
                     void handleCommand(() => player.setKnob(sceneId, id, value));
                 }
             }}
+            onResetKnobs={() => {
+                if (snapshot.sceneId !== null) {
+                    const sceneId = snapshot.sceneId;
+                    handleCommand(() => player.resetKnobs(sceneId));
+                }
+            }}
             onTimer={seconds => { void handleCommand(() => player.setTimer(seconds)); }}
+            onExtendTimer={seconds => { handleCommand(() => player.extendTimer(seconds)); }}
             onScenario={handleScenario}
             onImport={__DEV__ && !onScenario ? handleImport : undefined}
         />

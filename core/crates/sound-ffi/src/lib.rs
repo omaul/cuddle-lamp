@@ -91,6 +91,29 @@ pub unsafe extern "C" fn sound_engine_load_scene(engine: *mut SoundEngine, scene
     }
 }
 
+/// Загружает сцену с сохранёнными положениями ручек.
+///
+/// # Safety
+///
+/// `engine` — живой движок, оба аргумента JSON — строки в UTF-8 с нулём на конце.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_load_scene_with_knobs(
+    engine: *mut SoundEngine,
+    scene_json: *const c_char,
+    knobs_json: *const c_char,
+) -> i32 {
+    unsafe {
+        with_controller(engine, |controller| {
+            let scene = sound_core::Scene::from_json(read_str(scene_json)?)
+                .map_err(EngineError::from)
+                .map_err(ControlError::Engine)?;
+            let knobs = serde_json::from_str(read_str(knobs_json)?)
+                .map_err(|_| ControlError::InvalidArgument("не удалось прочитать сохранённые положения ручек"))?;
+            controller.load_scene_with_knobs(&scene, &knobs).map_err(ControlError::Engine)
+        })
+    }
+}
+
 /// # Safety
 ///
 /// `engine` — живой движок.
@@ -144,6 +167,20 @@ pub unsafe extern "C" fn sound_engine_set_scene_knob(
     }
 }
 
+/// Возвращает авторские положения ручек указанной сцены.
+///
+/// # Safety
+///
+/// `engine` — живой движок, `scene_id` — строка в UTF-8 с нулём на конце.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_reset_scene_knobs(engine: *mut SoundEngine, scene_id: *const c_char) -> i32 {
+    unsafe {
+        with_controller(engine, |controller| {
+            controller.reset_scene_knobs(read_str(scene_id)?).map_err(ControlError::Engine)
+        })
+    }
+}
+
 /// Включает таймер на `seconds` секунд игры. Ноль или отрицательное значение выключает таймер.
 ///
 /// # Safety
@@ -153,6 +190,16 @@ pub unsafe extern "C" fn sound_engine_set_scene_knob(
 pub unsafe extern "C" fn sound_engine_set_timer(engine: *mut SoundEngine, seconds: f32) -> i32 {
     let seconds = (seconds.is_finite() && seconds > 0.0).then_some(seconds);
     unsafe { with_controller(engine, |controller| controller.set_timer(seconds).map_err(ControlError::Engine)) }
+}
+
+/// Добавляет время к включённому таймеру.
+///
+/// # Safety
+///
+/// `engine` — живой движок.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sound_engine_extend_timer(engine: *mut SoundEngine, seconds: f32) -> i32 {
+    unsafe { with_controller(engine, |controller| controller.extend_timer(seconds).map_err(ControlError::Engine)) }
 }
 
 /// Задаёт общую громкость от 0 до 1.
@@ -369,6 +416,40 @@ mod tests {
             sound_engine_destroy(engine);
         }
         assert!(left.iter().any(|sample| *sample != 0.0));
+    }
+
+    #[test]
+    fn restores_and_resets_knobs_without_changing_transport() {
+        let engine = sound_engine_create(48_000.0);
+        let scene = CString::new(SCENE_JSON).unwrap();
+        unsafe {
+            assert_eq!(
+                sound_engine_load_scene_with_knobs(engine, scene.as_ptr(), c"{\"brightness\":1.0}".as_ptr()),
+                SOUND_ENGINE_OK
+            );
+            sound_engine_render(engine, std::ptr::null_mut(), std::ptr::null_mut(), 0);
+            let (state, scene) = (&mut *(*engine).controller.get()).snapshot();
+            assert_eq!(state.status, sound_core::PlaybackStatus::Paused);
+            assert_eq!(scene.unwrap().knobs["brightness"], 1.0);
+
+            assert_eq!(sound_engine_reset_scene_knobs(engine, c"other".as_ptr()), SOUND_ENGINE_ERROR_SCENE_CHANGED);
+            assert_eq!(sound_engine_set_timer(engine, 2400.0), SOUND_ENGINE_OK);
+            assert_eq!(sound_engine_play(engine), SOUND_ENGINE_OK);
+            assert_eq!(sound_engine_reset_scene_knobs(engine, c"ffi".as_ptr()), SOUND_ENGINE_OK);
+            assert_eq!(sound_engine_extend_timer(engine, 600.0), SOUND_ENGINE_OK);
+            assert_eq!(sound_engine_extend_timer(engine, 600.0), SOUND_ENGINE_OK);
+            sound_engine_render(engine, std::ptr::null_mut(), std::ptr::null_mut(), 0);
+            let (state, scene) = (&mut *(*engine).controller.get()).snapshot();
+            assert_eq!(state.status, sound_core::PlaybackStatus::Playing);
+            assert_eq!(state.timer_remaining_seconds, Some(3600.0));
+            assert_eq!(scene.unwrap().knobs["brightness"], 0.5);
+
+            assert_eq!(sound_engine_set_timer(engine, 0.0), SOUND_ENGINE_OK);
+            assert_eq!(sound_engine_extend_timer(engine, 600.0), SOUND_ENGINE_OK);
+            sound_engine_render(engine, std::ptr::null_mut(), std::ptr::null_mut(), 0);
+            assert_eq!(sound_engine_get_state(engine).timer_remaining_seconds, -1.0);
+            sound_engine_destroy(engine);
+        }
     }
 
     #[test]

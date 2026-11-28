@@ -1,7 +1,9 @@
 import { AppState } from 'react-native';
+import { scenes } from './catalog';
 import type { Scene } from './catalog';
 import type { Player, PlayerSnapshot, PlayerStatus } from './Player';
 import type { Spec } from '../native/specs/NativeSoundEngine';
+import { createPlayerPreferences } from './preferences';
 
 interface EngineSnapshot {
     status: 0 | 1 | 2 | 3;
@@ -16,7 +18,7 @@ const STATUS_BY_CODE: readonly PlayerStatus[] = ['loading', 'paused', 'playing',
 const REFRESH_MILLISECONDS = 125;
 const COMMAND_TIMEOUT_MILLISECONDS = 3000;
 
-export function createNativePlayer(module: Spec, initialScene: Scene): Player {
+export function createNativePlayer(module: Spec, initialScene: Scene, preferences = createPlayerPreferences()): Player {
     let snapshot: PlayerSnapshot = {
         status: 'loading',
         sceneId: null,
@@ -30,6 +32,7 @@ export function createNativePlayer(module: Spec, initialScene: Scene): Player {
     let latestJson: string | undefined;
     let latestEngine: EngineSnapshot | undefined;
     let hasRequestedInitialScene = false;
+    let loadedScene: Scene | undefined;
     let initialSceneError: string | undefined;
     let hasReadError = false;
     const listeners = new Set<() => void>();
@@ -49,6 +52,9 @@ export function createNativePlayer(module: Spec, initialScene: Scene): Player {
         latestEngine = engine;
         hasReadError = false;
         if (engine.scene) {
+            if (!hasRequestedInitialScene) {
+                loadedScene = scenes.find(scene => scene.id === engine.scene?.sceneId);
+            }
             initialSceneError = undefined;
         }
         update({
@@ -79,7 +85,7 @@ export function createNativePlayer(module: Spec, initialScene: Scene): Player {
         }
     };
 
-    const enqueue = (submit: () => number | void): Promise<void> => {
+    const enqueue = (submit: () => number | void, confirm?: () => void): Promise<void> => {
         const pending = commands.then(async () => {
             const sequence = submit();
             if (sequence === undefined) {
@@ -91,6 +97,7 @@ export function createNativePlayer(module: Spec, initialScene: Scene): Player {
             while (true) {
                 const { appliedCommand } = refresh();
                 if (((appliedCommand - sequence) >>> 0) < 0x80000000) {
+                    confirm?.();
                     return;
                 }
                 if (Date.now() >= deadline) {
@@ -106,12 +113,18 @@ export function createNativePlayer(module: Spec, initialScene: Scene): Player {
     const loadScene = async (scene: Scene) => {
         hasRequestedInitialScene = true;
         initialSceneError = undefined;
-        await enqueue(() => module.loadScene(scene.json));
+        await enqueue(
+            () => module.loadScene(scene.json, JSON.stringify(preferences.getKnobs(scene))),
+            () => {
+                loadedScene = scene;
+                preferences.rememberScene(scene);
+            },
+        );
     };
 
     const syncPlayer = () => {
         if (refreshSafely() && !hasRequestedInitialScene && snapshot.status === 'loading') {
-            void loadScene(initialScene).catch(reason => {
+            void loadScene(preferences.getLastScene() ?? initialScene).catch(reason => {
                 if (!snapshot.sceneId) {
                     initialSceneError = reason instanceof Error ? reason.message : 'Сцена недоступна';
                     update({ ...snapshot, status: 'error', rms: 0, error: initialSceneError });
@@ -154,10 +167,25 @@ export function createNativePlayer(module: Spec, initialScene: Scene): Player {
             return enqueue(() => module.setPlaying(isPlaying));
         },
         setKnob(sceneId, knobId, value) {
-            return enqueue(() => module.setKnob(sceneId, knobId, value));
+            return enqueue(() => module.setKnob(sceneId, knobId, value), () => {
+                const confirmedValue = snapshot.knobs[knobId];
+                if (loadedScene?.id === sceneId && confirmedValue !== undefined) {
+                    preferences.rememberKnob(loadedScene, knobId, confirmedValue);
+                }
+            });
+        },
+        resetKnobs(sceneId) {
+            return enqueue(() => module.resetKnobs(sceneId), () => {
+                if (loadedScene?.id === sceneId) {
+                    preferences.forgetKnobs(loadedScene);
+                }
+            });
         },
         setTimer(seconds) {
             return enqueue(() => module.setTimer(seconds ?? 0));
+        },
+        extendTimer(seconds) {
+            return enqueue(() => module.extendTimer(seconds));
         },
         setVolume(volume) {
             return enqueue(() => module.setVolume(volume));

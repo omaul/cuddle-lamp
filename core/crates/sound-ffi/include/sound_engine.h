@@ -54,6 +54,9 @@ void sound_engine_destroy(SoundEngine *engine);
 /* Загружает сцену из JSON в UTF-8. Если звук играет, новая сцена плавно сменяет старую. */
 int32_t sound_engine_load_scene(SoundEngine *engine, const char *scene_json);
 
+/* Загружает сцену с положениями ручек из объекта JSON. */
+int32_t sound_engine_load_scene_with_knobs(SoundEngine *engine, const char *scene_json, const char *knobs_json);
+
 /* Запускает звук с плавным появлением. Без загруженной сцены ничего не делает. */
 int32_t sound_engine_play(SoundEngine *engine);
 
@@ -66,8 +69,14 @@ int32_t sound_engine_set_knob(SoundEngine *engine, const char *knob_id, float po
 /* Ставит ручку только в сцене, для которой отправлена команда. Положение должно быть конечным. */
 int32_t sound_engine_set_scene_knob(SoundEngine *engine, const char *scene_id, const char *knob_id, float position);
 
+/* Возвращает авторские положения ручек указанной сцены. */
+int32_t sound_engine_reset_scene_knobs(SoundEngine *engine, const char *scene_id);
+
 /* Включает таймер на seconds секунд игры, ноль или отрицательное значение выключает его. */
 int32_t sound_engine_set_timer(SoundEngine *engine, float seconds);
+
+/* Добавляет секунды к включённому таймеру. */
+int32_t sound_engine_extend_timer(SoundEngine *engine, float seconds);
 
 /* Задаёт общую громкость от 0 до 1. */
 int32_t sound_engine_set_volume(SoundEngine *engine, float volume);

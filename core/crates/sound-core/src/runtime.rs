@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::layers::{BellNote, Layer, LayerFrame, MAX_CHORD_NOTES};
 use crate::music::Conductor;
@@ -52,6 +52,7 @@ pub struct SceneRuntime {
     rng: Rng,
     params: ParamSet,
     knobs: Vec<Vec<KnobTargetBinding>>,
+    knob_defaults: Vec<f32>,
     sample_rate: f32,
 }
 
@@ -61,7 +62,7 @@ impl SceneRuntime {
     /// # Errors
     ///
     /// Ошибка сцены с понятным автору описанием, что именно не так.
-    pub fn new(scene: &Scene, sample_rate: f32) -> Result<Self, SceneError> {
+    pub fn new(scene: &Scene, sample_rate: f32, initial_knobs: &BTreeMap<String, f32>) -> Result<Self, SceneError> {
         validate_harmony(&scene.harmony)?;
         validate_layer_ids(scene)?;
         validate_notes(scene)?;
@@ -76,8 +77,9 @@ impl SceneRuntime {
         let knobs = bind_knobs(scene)?;
 
         for (bindings, knob) in knobs.iter().zip(&scene.knobs) {
+            let position = initial_knobs.get(&knob.id).copied().unwrap_or(knob.default);
             for binding in bindings {
-                let value = binding.curve.interpolate(binding.from, binding.to, knob.default);
+                let value = binding.curve.interpolate(binding.from, binding.to, position);
                 owner_params(&mut params, &mut layers, binding.owner).set_immediate(binding.param_index, value);
             }
         }
@@ -89,6 +91,7 @@ impl SceneRuntime {
             rng,
             params,
             knobs,
+            knob_defaults: scene.knobs.iter().map(|knob| knob.default).collect(),
             sample_rate,
         })
     }
@@ -106,6 +109,12 @@ impl SceneRuntime {
         for binding in bindings {
             let value = binding.curve.interpolate(binding.from, binding.to, position);
             owner_params(params, layers, binding.owner).set_target(binding.param_index, value);
+        }
+    }
+
+    pub fn reset_knobs(&mut self) {
+        for index in 0..self.knob_defaults.len() {
+            self.set_knob(index, self.knob_defaults[index]);
         }
     }
 

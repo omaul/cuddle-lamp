@@ -1,5 +1,6 @@
 import { getInitialKnobs, scenes } from './catalog';
 import type { Player, PlayerSnapshot, PlayerStatus } from './Player';
+import { createPlayerPreferences } from './preferences';
 
 const PAUSE_FADE_MILLISECONDS = 1500;
 const PREVIEW_TIMER_FADE_MILLISECONDS = 2000;
@@ -11,12 +12,13 @@ const LEVEL_BY_STATUS: Record<PlayerStatus, number> = {
     error: 0,
 };
 
-export function createPreviewPlayer(): Player & { setScenario(status: PlayerStatus): void } {
+export function createPreviewPlayer(preferences = createPlayerPreferences()): Player & { setScenario(status: PlayerStatus): void } {
     const listeners = new Set<() => void>();
+    let loadedScene = preferences.getLastScene() ?? scenes[0];
     let snapshot: PlayerSnapshot = {
         status: 'paused',
-        sceneId: scenes[0].id,
-        knobs: getInitialKnobs(scenes[0]),
+        sceneId: loadedScene.id,
+        knobs: { ...getInitialKnobs(loadedScene), ...preferences.getKnobs(loadedScene) },
         remainingSeconds: null,
         rms: 0,
     };
@@ -73,9 +75,11 @@ export function createPreviewPlayer(): Player & { setScenario(status: PlayerStat
         },
         async loadScene(scene) {
             const canContinue = snapshot.status === 'playing' || snapshot.status === 'fading';
+            loadedScene = scene;
+            preferences.rememberScene(scene);
             update({
                 sceneId: scene.id,
-                knobs: getInitialKnobs(scene),
+                knobs: { ...getInitialKnobs(scene), ...preferences.getKnobs(scene) },
                 status: canContinue ? snapshot.status : 'paused',
                 error: undefined,
             });
@@ -106,13 +110,34 @@ export function createPreviewPlayer(): Player & { setScenario(status: PlayerStat
             if (!Object.hasOwn(snapshot.knobs, knobId)) {
                 throw new Error('Ручка отсутствует в выбранной сцене');
             }
-            update({ knobs: { ...snapshot.knobs, [knobId]: Math.max(0, Math.min(value, 1)) } });
+            const position = Math.max(0, Math.min(value, 1));
+            preferences.rememberKnob(loadedScene, knobId, position);
+            update({ knobs: { ...snapshot.knobs, [knobId]: position } });
+        },
+        async resetKnobs(sceneId) {
+            if (snapshot.sceneId !== sceneId) {
+                throw new Error('Сцена сменилась во время настройки');
+            }
+            preferences.forgetKnobs(loadedScene);
+            update({ knobs: getInitialKnobs(loadedScene) });
         },
         async setTimer(seconds) {
             tick();
             timerMilliseconds = seconds !== null && Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
             timerDeadline = snapshot.status === 'playing' && timerMilliseconds !== null ? Date.now() + timerMilliseconds : null;
             update({ remainingSeconds: timerMilliseconds === null ? null : Math.ceil(timerMilliseconds / 1000) });
+        },
+        async extendTimer(seconds) {
+            tick();
+            if (timerMilliseconds === null || !Number.isFinite(seconds) || seconds <= 0) {
+                return;
+            }
+            const extension = seconds * 1000;
+            timerMilliseconds += extension;
+            if (timerDeadline !== null) {
+                timerDeadline += extension;
+            }
+            update({ remainingSeconds: Math.ceil(timerMilliseconds / 1000) });
         },
         async setVolume(nextVolume) {
             volume = Math.max(0, Math.min(nextVolume, 1));

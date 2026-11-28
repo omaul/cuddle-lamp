@@ -79,7 +79,7 @@ const SceneVisual: React.FC<SceneVisualProps> = ({ sceneId, isPlaying, rms, bell
 
     return (
         <View
-            pointerEvents="none"
+            pointerEvents={Platform.OS === 'ios' && sceneId === 'relax' ? 'box-none' : 'none'}
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
             style={styles.canvas}

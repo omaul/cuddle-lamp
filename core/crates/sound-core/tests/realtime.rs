@@ -79,10 +79,12 @@ fn render_does_not_allocate() {
     assert_eq!(count_allocations_while_rendering(&mut processor, 4.0), 0, "загрузка и игра сцены");
 
     controller.load_scene_json(OTHER_SCENE).unwrap();
+    controller.extend_timer(1.0).unwrap();
     assert_eq!(count_allocations_while_rendering(&mut processor, 6.0), 0, "смена сцены и таймер");
 
     controller.load_scene_json(TEST_SCENE).unwrap();
     controller.set_knob("space", 0.2).unwrap();
+    controller.reset_scene_knobs("test").unwrap();
     controller.pause().unwrap();
     assert_eq!(count_allocations_while_rendering(&mut processor, 3.0), 0, "пауза");
 }

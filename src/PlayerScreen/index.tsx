@@ -3,6 +3,7 @@ import {
     Animated,
     Easing,
     Keyboard,
+    KeyboardAvoidingView,
     Modal,
     PanResponder,
     Platform,
@@ -28,7 +29,9 @@ interface PlayerScreenProps {
     onScene: (scene: Scene) => void;
     onPlaying: (isPlaying: boolean) => void;
     onKnob: (id: string, value: number) => void;
+    onResetKnobs: () => void;
     onTimer: (seconds: number | null) => void;
+    onExtendTimer: (seconds: number) => void;
     onScenario?: (status: PlayerStatus) => void;
     onImport?: (json: string) => void;
 }
@@ -48,6 +51,8 @@ const PANEL_TITLES = {
     tools: 'Инструменты разработки',
 };
 const STATUSES = Object.keys(STATUS_LABELS) as PlayerStatus[];
+const MAX_TIMER_MINUTES = 1440;
+const TIMER_EXTENSION_SECONDS = 10 * 60;
 const TIMERS = [
     { title: 'Выкл.', seconds: null },
     { title: '15 мин', seconds: 900 },
@@ -62,13 +67,16 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
     onScene,
     onPlaying,
     onKnob,
+    onResetKnobs,
     onTimer,
+    onExtendTimer,
     onScenario,
     onImport,
 }) => {
     const { height } = useWindowDimensions();
     const [selectedKnobBySceneId, setSelectedKnobBySceneId] = useState<Record<string, string>>({});
     const [sceneJson, setSceneJson] = useState('');
+    const [timerMinutesInput, setTimerMinutesInput] = useState('');
     const [openPanel, setOpenPanel] = useState<keyof typeof PANEL_TITLES | null>(null);
     const [sheetOffset] = useState(() => new Animated.Value(0));
     const [sheetProgress] = useState(() => new Animated.Value(0));
@@ -77,6 +85,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
         [height, sheetOffset, sheetProgress],
     );
     const handleClosePanel = useCallback(() => {
+        Keyboard.dismiss();
         Animated.timing(sheetProgress, {
             toValue: 0,
             duration: 180,
@@ -108,20 +117,33 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
             onPanResponderTerminate: resetSheetOffset,
         });
     }, [handleClosePanel, resetSheetOffset, sheetOffset]);
-    const PanelContent = openPanel === 'tools' ? ScrollView : View;
+    const isScrollablePanel = openPanel === 'tools' || openPanel === 'timer';
+    const PanelContent = isScrollablePanel ? ScrollView : View;
     const scene = scenes.find((item) => item.id === snapshot.sceneId);
     const knobLabels = (snapshot.knobLabels ?? scene?.knobs ?? []).filter(
         (knob) => snapshot.knobs[knob.id] !== undefined,
     );
     const sceneId = snapshot.sceneId ?? '';
+    const overlayPointerEvents = Platform.OS === 'ios' && sceneId === 'relax' ? 'box-none' : 'auto';
     const activeKnob = knobLabels.find((knob) => knob.id === selectedKnobBySceneId[sceneId]) ?? knobLabels[0];
     const isPlaying = snapshot.status === 'playing' || snapshot.status === 'fading';
     const canPlay = snapshot.status !== 'loading' && snapshot.status !== 'error' && snapshot.sceneId !== null;
     const remainingSeconds = snapshot.remainingSeconds;
+    const canExtendTimer = snapshot.status === 'playing' && remainingSeconds !== null && remainingSeconds > 0;
+    const timerMinutes = Number(timerMinutesInput);
+    const isTimerInputValid = timerMinutes >= 1 && timerMinutes <= MAX_TIMER_MINUTES;
+    const hasInvalidTimerInput = timerMinutesInput.length > 0 && !isTimerInputValid;
     const timerLabel =
         remainingSeconds === null
             ? 'Выключен'
             : `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}`;
+
+    const handleSetCustomTimer = () => {
+        if (canPlay && isTimerInputValid) {
+            onTimer(timerMinutes * 60);
+            handleClosePanel();
+        }
+    };
 
     return (
         <View style={styles.screen}>
@@ -133,8 +155,8 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                 space={snapshot.knobs.space ?? 0.5}
                 inputRef={visualInput}
             />
-            <Overlay style={styles.screen}>
-                <View style={styles.content}>
+            <Overlay pointerEvents={overlayPointerEvents} style={styles.screen}>
+                <View pointerEvents={overlayPointerEvents} style={styles.content}>
                     <View style={styles.topBar}>
                         <ScrollView
                             horizontal
@@ -179,7 +201,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                     </View>
                     <View
                         style={styles.visualSpace}
-                        pointerEvents={sceneId === 'sleep' || sceneId === 'relax' ? 'auto' : 'none'}
+                        pointerEvents={sceneId === 'sleep' ? 'auto' : 'none'}
                         onLayout={({ nativeEvent }) => {
                             visualArea.current = nativeEvent.layout;
                         }}
@@ -220,22 +242,33 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                             {error}
                         </Text>
                     )}
-                    <View style={styles.panel}>
+                    <View style={[styles.panel, styles.timerPanel]}>
                         <Pressable
                             accessibilityRole="button"
                             accessibilityLabel={`Таймер сна, ${timerLabel}`}
                             accessibilityState={{ expanded: openPanel === 'timer' }}
                             onPress={() => {
+                                setTimerMinutesInput('');
                                 sheetOffset.setValue(0);
                                 setOpenPanel('timer');
                             }}
-                            style={styles.row}
+                            style={[styles.row, styles.timerRow]}
                         >
                             <Text style={styles.rowTitle}>Таймер сна</Text>
                             <Text style={[styles.secondary, remainingSeconds !== null && styles.accentText]}>
                                 {timerLabel} ›
                             </Text>
                         </Pressable>
+                        {canExtendTimer && (
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Продлить таймер на 10 минут"
+                                onPress={() => onExtendTimer(TIMER_EXTENSION_SECONDS)}
+                                style={({ pressed }) => [styles.inlineAction, pressed && styles.pressed]}
+                            >
+                                <Text style={styles.accentText}>+10 мин</Text>
+                            </Pressable>
+                        )}
                     </View>
                     {activeKnob && (
                         <View style={styles.soundPanel}>
@@ -273,6 +306,15 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                                     );
                                 })}
                             </ScrollView>
+                            <Pressable
+                                accessibilityRole="button"
+                                accessibilityState={{ disabled: !canPlay }}
+                                disabled={!canPlay}
+                                onPress={onResetKnobs}
+                                style={({ pressed }) => [styles.resetKnobs, (pressed || !canPlay) && styles.pressed]}
+                            >
+                                <Text style={styles.secondary}>Вернуть авторский звук</Text>
+                            </Pressable>
                         </View>
                     )}
                 </View>
@@ -290,7 +332,11 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                 }}
                 onRequestClose={handleClosePanel}
             >
-                <View style={styles.modalLayout}>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                    enabled={openPanel === 'timer'}
+                    style={styles.modalLayout}
+                >
                     <Animated.View pointerEvents="none" style={[styles.backdrop, { opacity: sheetProgress }]} />
                     <Pressable
                         accessible={false}
@@ -302,10 +348,10 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                         style={[styles.sheet, { transform: [{ translateY: sheetTranslation }] }]}
                         accessibilityViewIsModal
                         onAccessibilityEscape={handleClosePanel}
-                        {...(openPanel === 'tools' ? {} : sheetDrag.panHandlers)}
+                        {...(isScrollablePanel ? {} : sheetDrag.panHandlers)}
                     >
                         <Overlay style={styles.sheetContent}>
-                            <View {...(openPanel === 'tools' ? sheetDrag.panHandlers : {})}>
+                            <View {...(isScrollablePanel ? sheetDrag.panHandlers : {})}>
                                 <View
                                     collapsable={false}
                                     style={styles.grabArea}
@@ -346,9 +392,9 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                                 </View>
                             </View>
                             <PanelContent
-                                {...(openPanel === 'tools' && {
+                                {...(isScrollablePanel && {
                                     keyboardShouldPersistTaps: 'handled',
-                                    automaticallyAdjustKeyboardInsets: true,
+                                    automaticallyAdjustKeyboardInsets: openPanel === 'tools',
                                     bounces: false,
                                 })}
                             >
@@ -364,20 +410,48 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                                     </Pressable>
                                 )}
                                 {openPanel === 'timer' && (
-                                    <View style={styles.choices}>
-                                        {TIMERS.map(({ title, seconds }) => (
-                                            <Choice
-                                                key={title}
-                                                title={title}
-                                                selected={seconds === null && remainingSeconds === null}
-                                                disabled={!canPlay}
-                                                onPress={() => {
-                                                    onTimer(seconds);
-                                                    handleClosePanel();
-                                                }}
+                                    <>
+                                        <View style={styles.choices}>
+                                            {TIMERS.map(({ title, seconds }) => (
+                                                <Choice
+                                                    key={title}
+                                                    title={title}
+                                                    selected={seconds === null && remainingSeconds === null}
+                                                    disabled={!canPlay}
+                                                    onPress={() => {
+                                                        onTimer(seconds);
+                                                        handleClosePanel();
+                                                    }}
+                                                />
+                                            ))}
+                                        </View>
+                                        <View style={styles.customTimer}>
+                                            <TextInput
+                                                accessibilityLabel="Длительность таймера в минутах"
+                                                accessibilityHint={`От 1 до ${MAX_TIMER_MINUTES} минут`}
+                                                placeholder="Свои минуты"
+                                                placeholderTextColor={styles.input.color}
+                                                inputMode="numeric"
+                                                maxLength={4}
+                                                editable={canPlay}
+                                                value={timerMinutesInput}
+                                                onChangeText={value => setTimerMinutesInput(/^\d*$/.test(value) ? value : '')}
+                                                onSubmitEditing={handleSetCustomTimer}
+                                                style={styles.timerInput}
                                             />
-                                        ))}
-                                    </View>
+                                            <Choice
+                                                title="Установить"
+                                                primary
+                                                disabled={!canPlay || !isTimerInputValid}
+                                                onPress={handleSetCustomTimer}
+                                            />
+                                            {hasInvalidTimerInput && (
+                                                <Text accessibilityLiveRegion="polite" style={styles.timerInputHint}>
+                                                    От 1 до {MAX_TIMER_MINUTES} минут
+                                                </Text>
+                                            )}
+                                        </View>
+                                    </>
                                 )}
                                 {__DEV__ && openPanel === 'tools' && onScenario && (
                                     <>
@@ -443,7 +517,7 @@ const PlayerScreen: React.FC<PlayerScreenProps> = ({
                             </PanelContent>
                         </Overlay>
                     </Animated.View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
         </View>
     );

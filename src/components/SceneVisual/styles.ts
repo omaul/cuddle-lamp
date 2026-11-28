@@ -11,13 +11,6 @@ export default StyleSheet.create({
     },
     artwork: { position: 'absolute' },
     point: { position: 'absolute', borderRadius: 4, backgroundColor: '#c2d6f7' },
-    ripple: {
-        position: 'absolute',
-        borderWidth: 1,
-        borderColor: '#ffc4a3',
-        borderLeftColor: '#c98e9888',
-        borderBottomColor: '#cd999266',
-    },
     starHalo: {
         width: '100%',
         height: '100%',

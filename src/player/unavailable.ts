@@ -23,7 +23,9 @@ export function createUnavailablePlayer(initialScene: Scene): Player {
         loadScene: reject,
         setPlaying: reject,
         setKnob: reject,
+        resetKnobs: reject,
         setTimer: reject,
+        extendTimer: reject,
         setVolume: reject,
     };
 }

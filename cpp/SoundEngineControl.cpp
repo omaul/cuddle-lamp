@@ -46,8 +46,10 @@ uint32_t SoundEngineControl::submit(Action action, bool allowUnavailable) {
     return sound_engine_queued_command(engine_);
 }
 
-uint32_t SoundEngineControl::loadScene(const std::string &json) {
-    return submit([&](auto *engine) { return sound_engine_load_scene(engine, json.c_str()); });
+uint32_t SoundEngineControl::loadScene(const std::string &json, const std::string &knobsJson) {
+    return submit([&](auto *engine) {
+        return sound_engine_load_scene_with_knobs(engine, json.c_str(), knobsJson.c_str());
+    });
 }
 
 uint32_t SoundEngineControl::setPlaying(bool playing) {
@@ -62,8 +64,16 @@ uint32_t SoundEngineControl::setKnob(const std::string &sceneId, const std::stri
     });
 }
 
+uint32_t SoundEngineControl::resetKnobs(const std::string &sceneId) {
+    return submit([&](auto *engine) { return sound_engine_reset_scene_knobs(engine, sceneId.c_str()); });
+}
+
 uint32_t SoundEngineControl::setTimer(double seconds) {
     return submit([&](auto *engine) { return sound_engine_set_timer(engine, seconds); });
+}
+
+uint32_t SoundEngineControl::extendTimer(double seconds) {
+    return submit([&](auto *engine) { return sound_engine_extend_timer(engine, seconds); });
 }
 
 void SoundEngineControl::setVolume(double volume) {

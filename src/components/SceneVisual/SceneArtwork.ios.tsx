@@ -12,6 +12,7 @@ const SceneArtwork: React.FC<SceneArtworkProps> = (props) => {
     return (
         <LampSceneView
             style={styles.canvas}
+            pointerEvents="box-none"
             scene={sceneId}
             playing={isPlaying}
             motionAllowed={isMotionAllowed}
